@@ -4,6 +4,8 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
+pub mod ring;
 pub mod zq;
 
+pub use ring::PR;
 pub use zq::Zq;
