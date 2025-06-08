@@ -3,6 +3,7 @@ use std::array;
 use std::fmt;
 use std::ops;
 
+use crate::ntt::NTT;
 use crate::zq::Zq;
 use anyhow::{anyhow, Result};
 
@@ -76,6 +77,35 @@ impl<const Q: u64, const N: usize> PR<Q, N> {
             coeffs,
             evals: None,
         })
+    }
+
+    // TODO review if needed, or if with this interface
+    pub fn mul_by_matrix(&self, m: &Vec<Vec<Zq<Q>>>) -> Result<Vec<Zq<Q>>> {
+        matrix_vec_product(m, &self.coeffs.to_vec())
+    }
+    pub fn mul_by_zq(&self, s: &Zq<Q>) -> Self {
+        Self {
+            coeffs: array::from_fn(|i| self.coeffs[i] * *s),
+            evals: None,
+        }
+    }
+    pub fn mul_by_u64(&self, s: u64) -> Self {
+        let s = Zq::new(s);
+        Self {
+            coeffs: array::from_fn(|i| self.coeffs[i] * s),
+            // coeffs: self.coeffs.iter().map(|&e| e * s).collect(),
+            evals: None,
+        }
+    }
+    pub fn mul_by_f64(&self, s: f64) -> Self {
+        Self {
+            coeffs: array::from_fn(|i| Zq::from_f64(self.coeffs[i].0 as f64 * s)),
+            evals: None,
+        }
+    }
+
+    pub fn mul(&mut self, rhs: &mut Self) -> Self {
+        mul_mut(self, rhs)
     }
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -207,6 +237,51 @@ impl<const Q: u64, const N: usize> ops::Sub<&PR<Q, N>> for &PR<Q, N> {
         }
     }
 }
+impl<const Q: u64, const N: usize> ops::Mul<PR<Q, N>> for PR<Q, N> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        mul(&self, &rhs)
+    }
+}
+impl<const Q: u64, const N: usize> ops::Mul<&PR<Q, N>> for &PR<Q, N> {
+    type Output = PR<Q, N>;
+
+    fn mul(self, rhs: &PR<Q, N>) -> Self::Output {
+        mul(self, rhs)
+    }
+}
+
+// mul by Zq element
+impl<const Q: u64, const N: usize> ops::Mul<Zq<Q>> for PR<Q, N> {
+    type Output = Self;
+
+    fn mul(self, s: Zq<Q>) -> Self {
+        self.mul_by_zq(&s)
+    }
+}
+impl<const Q: u64, const N: usize> ops::Mul<&Zq<Q>> for &PR<Q, N> {
+    type Output = PR<Q, N>;
+
+    fn mul(self, s: &Zq<Q>) -> Self::Output {
+        self.mul_by_zq(s)
+    }
+}
+// mul by u64
+impl<const Q: u64, const N: usize> ops::Mul<u64> for PR<Q, N> {
+    type Output = Self;
+
+    fn mul(self, s: u64) -> Self {
+        self.mul_by_u64(s)
+    }
+}
+impl<const Q: u64, const N: usize> ops::Mul<&u64> for &PR<Q, N> {
+    type Output = PR<Q, N>;
+
+    fn mul(self, s: &u64) -> Self::Output {
+        self.mul_by_u64(*s)
+    }
+}
 
 impl<const Q: u64, const N: usize> ops::Neg for PR<Q, N> {
     type Output = Self;
@@ -217,6 +292,39 @@ impl<const Q: u64, const N: usize> ops::Neg for PR<Q, N> {
             evals: None,
         }
     }
+}
+
+fn mul_mut<const Q: u64, const N: usize>(lhs: &mut PR<Q, N>, rhs: &mut PR<Q, N>) -> PR<Q, N> {
+    // reuse evaluations if already computed
+    if !lhs.evals.is_some() {
+        lhs.evals = Some(NTT::<Q, N>::ntt(lhs.coeffs));
+    };
+    if !rhs.evals.is_some() {
+        rhs.evals = Some(NTT::<Q, N>::ntt(rhs.coeffs));
+    };
+    let lhs_evals = lhs.evals.unwrap();
+    let rhs_evals = rhs.evals.unwrap();
+
+    let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
+    let c = NTT::<Q, { N }>::intt(c_ntt);
+    PR::new(c, Some(c_ntt))
+}
+fn mul<const Q: u64, const N: usize>(lhs: &PR<Q, N>, rhs: &PR<Q, N>) -> PR<Q, N> {
+    // reuse evaluations if already computed
+    let lhs_evals = if lhs.evals.is_some() {
+        lhs.evals.unwrap()
+    } else {
+        NTT::<Q, N>::ntt(lhs.coeffs)
+    };
+    let rhs_evals = if rhs.evals.is_some() {
+        rhs.evals.unwrap()
+    } else {
+        NTT::<Q, N>::ntt(rhs.coeffs)
+    };
+
+    let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
+    let c = NTT::<Q, { N }>::intt(c_ntt);
+    PR::new(c, Some(c_ntt))
 }
 
 impl<const Q: u64, const N: usize> fmt::Display for PR<Q, N> {
@@ -276,5 +384,41 @@ mod tests {
             (a.clone() - b.clone()).to_string(),
             "x^2 + x + 1 mod Z_7/(X^3+1)"
         );
+    }
+
+    fn test_mul_opt<const Q: u64, const N: usize>(
+        a: [u64; N],
+        b: [u64; N],
+        expected_c: [u64; N],
+    ) -> Result<()> {
+        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::new(a[i]));
+        let mut a = PR::new(a, None);
+        let b: [Zq<Q>; N] = array::from_fn(|i| Zq::new(b[i]));
+        let mut b = PR::new(b, None);
+        let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::new(expected_c[i]));
+        let expected_c = PR::new(expected_c, None);
+
+        let c = mul_mut(&mut a, &mut b);
+        assert_eq!(c, expected_c);
+        Ok(())
+    }
+    #[test]
+    fn test_mul() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const N: usize = 4;
+
+        let a: [u64; N] = [1u64, 2, 3, 4];
+        let b: [u64; N] = [1u64, 2, 3, 4];
+        let c: [u64; N] = [65513, 65517, 65531, 20];
+        test_mul_opt::<Q, N>(a, b, c)?;
+
+        let a: [u64; N] = [0u64, 0, 0, 2];
+        let b: [u64; N] = [0u64, 0, 0, 2];
+        let c: [u64; N] = [0u64, 0, 65533, 0];
+        test_mul_opt::<Q, N>(a, b, c)?;
+
+        // TODO more testvectors
+
+        Ok(())
     }
 }
