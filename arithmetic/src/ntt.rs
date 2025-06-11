@@ -1,5 +1,6 @@
-//! Implementation of the NTT & iNTT, following the CT & GS algorighms, more
-//! details in https://github.com/arnaucube/math/blob/master/notes_ntt.pdf .
+//! Implementation of the NTT & iNTT, following the CT & GS algorighms, more details in
+//! https://eprint.iacr.org/2017/727.pdf, some notes at
+//! https://github.com/arnaucube/math/blob/master/notes_ntt.pdf .
 use crate::zq::Zq;
 
 #[derive(Debug)]
@@ -14,7 +15,8 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
 }
 
 impl<const Q: u64, const N: usize> NTT<Q, N> {
-    /// implements the Cooley-Tukey (CT) algorithm. Details at section 3.1 of
+    /// implements the Cooley-Tukey (CT) algorithm. Details at
+    /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.1 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
     pub fn ntt(a: [Zq<Q>; N]) -> [Zq<Q>; N] {
         let mut t = N / 2;
@@ -38,7 +40,8 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
         r
     }
 
-    /// implements the Gentleman-Sande (GS) algorithm. Details at section 3.2 of
+    /// implements the Cooley-Tukey (CT) algorithm. Details at
+    /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.2 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
     pub fn intt(a: [Zq<Q>; N]) -> [Zq<Q>; N] {
         let mut t = 1;

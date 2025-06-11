@@ -63,8 +63,15 @@ impl<const Q: u64, const N: usize> PR<Q, N> {
             evals: None,
         })
     }
-    pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Result<Self> {
+    pub fn rand_f64(mut rng: impl Rng, dist: impl Distribution<f64>) -> Result<Self> {
         let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));
+        Ok(Self {
+            coeffs,
+            evals: None,
+        })
+    }
+    pub fn rand_u64(mut rng: impl Rng, dist: impl Distribution<u64>) -> Result<Self> {
+        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::new(dist.sample(&mut rng)));
         Ok(Self {
             coeffs,
             evals: None,
