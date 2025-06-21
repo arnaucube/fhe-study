@@ -5,12 +5,12 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops;
 
-use arithmetic::{Rq, R};
+use arith::{R, Rq};
 
 // error deviation for the Gaussian(Normal) distribution
 // sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5
@@ -57,7 +57,7 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         let b1: R<N> = b.1.to_r();
 
         // tensor (\in R) (2021-204 p.9)
-        use arithmetic::ring::naive_mul;
+        use arith::ring::naive_mul;
         // (here can use *, but want to make it explicit that we're using the naive mul)
         let c0: Vec<i64> = naive_mul(&a0, &b0);
         let c1_l: Vec<i64> = naive_mul(&a0, &b1);
@@ -66,9 +66,9 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         let c2: Vec<i64> = naive_mul(&a1, &b1);
 
         // scale down, then reduce module Q, so result is \in R_q
-        let c0: Rq<Q, N> = arithmetic::ring::mul_div_round::<Q, N>(c0, T, Q);
-        let c1: Rq<Q, N> = arithmetic::ring::mul_div_round::<Q, N>(c1, T, Q);
-        let c2: Rq<Q, N> = arithmetic::ring::mul_div_round::<Q, N>(c2, T, Q);
+        let c0: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c0, T, Q);
+        let c1: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c1, T, Q);
+        let c2: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2, T, Q);
 
         (c0, c1, c2)
     }
@@ -106,7 +106,7 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
 }
 // naive mul in the ring Rq, reusing the ring::naive_mul and then applying mod(X^N +1)
 fn tmp_naive_mul<const Q: u64, const N: usize>(a: Rq<Q, N>, b: Rq<Q, N>) -> Rq<Q, N> {
-    Rq::<Q, N>::from_vec_i64(arithmetic::ring::naive_mul(&a.to_r(), &b.to_r()))
+    Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(&a.to_r(), &b.to_r()))
 }
 
 impl<const Q: u64, const N: usize> ops::Add<RLWE<Q, N>> for RLWE<Q, N> {
@@ -196,7 +196,7 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         let cs = c.0 + c.1 * sk.0; // done in mod q
 
         // let c1s = tmp_naive_mul(c.1, sk.0);
-        // // let c1s = arithmetic::ring::naive_mul(&c.1.to_r(), &sk.0.to_r()); // TODO rm
+        // // let c1s = arith::ring::naive_mul(&c.1.to_r(), &sk.0.to_r()); // TODO rm
         // // let c1s = Rq::<Q, N>::from_vec_i64(c1s);
         // let cs = c.0 + c1s;
 
@@ -293,12 +293,12 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         // let c2 = c2.to_r();
 
         // let c2rlk0: Vec<f64> = (c2.remodule::<PQ>() * rlk.0)
-        use arithmetic::ring::naive_mul;
+        use arith::ring::naive_mul;
         let c2rlk0: Vec<i64> = naive_mul(&c2.to_r(), &rlk.0.to_r());
         let c2rlk1: Vec<i64> = naive_mul(&c2.to_r(), &rlk.1.to_r());
 
-        let r0: Rq<Q, N> = arithmetic::ring::mul_div_round::<Q, N>(c2rlk0, 1, P);
-        let r1: Rq<Q, N> = arithmetic::ring::mul_div_round::<Q, N>(c2rlk1, 1, P);
+        let r0: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2rlk0, 1, P);
+        let r1: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2rlk1, 1, P);
 
         // let r0 = Rq::<Q, N>::from_vec_f64(c2rlk0);
         // let r1 = Rq::<Q, N>::from_vec_f64(c2rlk1);
@@ -409,7 +409,7 @@ mod tests {
     fn test_tensor() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
         const N: usize = 32;
-        const T: u64 = 8; // plaintext modulus
+        const T: u64 = 2; // plaintext modulus
 
         // const P: u64 = Q;
         const P: u64 = Q * Q;
@@ -442,10 +442,10 @@ mod tests {
         // decrypt non-relinearized mul result
         let m3: Rq<Q, N> = c_a + c_b * sk.0 + c_c * sk.0 * sk.0;
         // let m3: Rq<Q, N> = c_a
-        //     + Rq::<Q, N>::from_vec_i64(arithmetic::ring::naive_mul(&c_b.to_r(), &sk.0.to_r()))
-        //     + Rq::<Q, N>::from_vec_i64(arithmetic::ring::naive_mul(
+        //     + Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(&c_b.to_r(), &sk.0.to_r()))
+        //     + Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(
         //         &c_c.to_r(),
-        //         &R::<N>::from_vec(arithmetic::ring::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
+        //         &R::<N>::from_vec(arith::ring::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
         //     ));
         let m3: Rq<Q, N> = m3.mul_div_round(T, Q); // descale
         let m3 = m3.remodule::<T>();
@@ -543,11 +543,13 @@ mod tests {
         let m3 = BFV::<Q, N, T>::decrypt(&sk, &c3);
 
         let naive = (m1.to_r() * m2.to_r()).to_rq::<T>();
-        assert_eq!(m3.coeffs().to_vec(), naive.coeffs().to_vec(),
+        assert_eq!(
+            m3.coeffs().to_vec(),
+            naive.coeffs().to_vec(),
             "\n\nfor testing:\nlet m1 = Rq::<T, N>::from_vec_u64(vec!{:?});\nlet m2 = Rq::<T, N>::from_vec_u64(vec!{:?});\n",
             m1.coeffs(),
             m2.coeffs()
-            );
+        );
 
         Ok(())
     }

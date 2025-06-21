@@ -2,7 +2,7 @@
 //! Vandermonde matrix.
 use crate::zq::Zq;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 #[derive(Debug)]
 pub struct NTT<const Q: u64, const N: usize> {
@@ -101,8 +101,8 @@ mod tests {
     use super::*;
     use rand_distr::Uniform;
 
-    use crate::ring::matrix_vec_product;
     use crate::ring::Rq;
+    use crate::ring::matrix_vec_product;
 
     #[test]
     fn roots_of_unity() -> Result<()> {

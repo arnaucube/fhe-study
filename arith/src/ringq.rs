@@ -1,14 +1,14 @@
 //! Polynomial ring Z_q[X]/(X^N+1)
 //!
 
-use rand::{distributions::Distribution, Rng};
+use rand::{Rng, distributions::Distribution};
 use std::array;
 use std::fmt;
 use std::ops;
 
 use crate::ntt::NTT;
-use crate::zq::{modulus_u64, Zq};
-use anyhow::{anyhow, Result};
+use crate::zq::{Zq, modulus_u64};
+use anyhow::{Result, anyhow};
 
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
