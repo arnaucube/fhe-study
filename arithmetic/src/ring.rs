@@ -59,6 +59,7 @@ impl<const N: usize> R<N> {
         crate::Rq::<Q, N>::from_vec_f64(r)
     }
 }
+
 pub fn mul_div_round<const Q: u64, const N: usize>(
     v: Vec<i64>,
     num: u64,
@@ -73,8 +74,19 @@ pub fn mul_div_round<const Q: u64, const N: usize>(
     crate::Rq::<Q, N>::from_vec_f64(r)
 }
 
+// TODO rename to make it clear that is not mod q, but mod X^N+1
 // apply mod (X^N+1)
 pub fn modulus<const N: usize>(p: &mut Vec<i64>) {
+    if p.len() < N {
+        return;
+    }
+    for i in N..p.len() {
+        p[i - N] = p[i - N].clone() - p[i].clone();
+        p[i] = 0;
+    }
+    p.truncate(N);
+}
+pub fn modulus_i128<const N: usize>(p: &mut Vec<i128>) {
     if p.len() < N {
         return;
     }
@@ -133,7 +145,7 @@ impl<const N: usize> ops::Mul<&R<N>> for &R<N> {
     }
 }
 
-// TODO with NTT(?)
+// TODO WIP
 pub fn naive_poly_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> R<N> {
     let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
     let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
@@ -147,15 +159,35 @@ pub fn naive_poly_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> R<N> {
     // apply mod (X^N + 1))
     R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
 }
+
 pub fn naive_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
     let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
     let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
-    let mut result = vec![0; (N * 2) - 1];
+    let mut result: Vec<i128> = vec![0; (N * 2) - 1];
     for i in 0..N {
         for j in 0..N {
             result[i + j] = result[i + j] + poly1[i] * poly2[j];
         }
     }
+
+    modulus_i128::<N>(&mut result);
+    // for c_i in result.iter() {
+    //     println!("---");
+    //     println!("{:?}", &c_i);
+    //     println!("{:?}", *c_i as i64);
+    //     println!("{:?}", (*c_i as i64) as i128);
+    //     assert_eq!(*c_i, (*c_i as i64) as i128, "{:?}", c_i);
+    // }
+
+    // let q: i128 = 65537;
+    // let result: Vec<i64> = result
+    //     .iter()
+    //     // .map(|c_i| ((c_i % q + q) % q) as i64)
+    //     .map(|c_i| (c_i % q) as i64)
+    //     // .map(|c_i| *c_i as i64)
+    //     .collect();
+    // result
+
     result.iter().map(|c| *c as i64).collect()
 }
 
