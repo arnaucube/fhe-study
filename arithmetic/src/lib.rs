@@ -4,11 +4,13 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
-mod naive; // TODO rm
+mod naive_ntt; // TODO rm
 pub mod ntt;
 pub mod ring;
+pub mod ringq;
 pub mod zq;
 
 pub use ntt::NTT;
-pub use ring::PR;
+pub use ring::R;
+pub use ringq::Rq;
 pub use zq::Zq;

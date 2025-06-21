@@ -115,19 +115,20 @@ const fn roots_of_unity_inv<const Q: u64, const N: usize>(v: [Zq<Q>; N]) -> [Zq<
 
 /// returns x^k mod Q
 const fn const_exp_mod<const Q: u64>(x: u64, k: u64) -> u64 {
-    let mut r = 1u64;
-    let mut x = x;
-    let mut k = k;
-    x = x % Q;
+    // work on u128 to avoid overflow
+    let mut r = 1u128;
+    let mut x = x as u128;
+    let mut k = k as u128;
+    x = x % Q as u128;
     // exponentiation by square strategy
     while k > 0 {
         if k % 2 == 1 {
-            r = (r * x) % Q;
+            r = (r * x) % Q as u128;
         }
-        x = (x * x) % Q;
+        x = (x * x) % Q as u128;
         k /= 2;
     }
-    r
+    r as u64
 }
 
 /// returns x^-1 mod Q
@@ -149,7 +150,7 @@ mod tests {
         const N: usize = 4;
 
         let a: [u64; N] = [1u64, 2, 3, 4];
-        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::new(a[i]));
+        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
 
         let a_ntt = NTT::<Q, N>::ntt(a);
 
