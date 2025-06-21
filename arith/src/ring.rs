@@ -1,18 +1,13 @@
 //! Polynomial ring Z[X]/(X^N+1)
 //!
 
-use anyhow::{Result, anyhow};
-use rand::{Rng, distributions::Distribution};
 use std::array;
 use std::fmt;
 use std::ops;
 
-use crate::ntt::NTT;
-use crate::zq::Zq;
-
 // PolynomialRing element, where the PolynomialRing is R = Z[X]/(X^n +1)
-#[derive(Clone, Copy, Debug)]
-pub struct R<const N: usize>([i64; N]);
+#[derive(Clone, Copy)]
+pub struct R<const N: usize>(pub [i64; N]);
 
 impl<const Q: u64, const N: usize> From<crate::ringq::Rq<Q, N>> for R<N> {
     fn from(rq: crate::ringq::Rq<Q, N>) -> Self {
@@ -157,10 +152,48 @@ pub fn naive_poly_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> R<N> {
     }
 
     // apply mod (X^N + 1))
-    R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
+    // R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
+    modulus_i128::<N>(&mut result);
+    // dbg!(&result);
+    // dbg!(R::<N>(array::from_fn(|i| result[i] as i64)).coeffs());
+
+    // sanity check: check that there are no coeffs > i64_max
+    assert_eq!(
+        result,
+        R::<N>(array::from_fn(|i| result[i] as i64))
+            .coeffs()
+            .iter()
+            .map(|c| *c as i128)
+            .collect::<Vec<_>>()
+    );
+    R(array::from_fn(|i| result[i] as i64))
+}
+pub fn naive_mul_2<const N: usize>(poly1: &Vec<i128>, poly2: &Vec<i128>) -> Vec<i128> {
+    let mut result: Vec<i128> = vec![0; (N * 2) - 1];
+    for i in 0..N {
+        for j in 0..N {
+            result[i + j] = result[i + j] + poly1[i] * poly2[j];
+        }
+    }
+
+    // apply mod (X^N + 1))
+    // R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
+    modulus_i128::<N>(&mut result);
+    result
 }
 
 pub fn naive_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
+    let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
+    let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
+    let mut result = vec![0; (N * 2) - 1];
+    for i in 0..N {
+        for j in 0..N {
+            result[i + j] = result[i + j] + poly1[i] * poly2[j];
+        }
+    }
+    result.iter().map(|c| *c as i64).collect()
+}
+pub fn naive_mul_TMP<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
     let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
     let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
     let mut result: Vec<i128> = vec![0; (N * 2) - 1];
@@ -170,6 +203,7 @@ pub fn naive_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
         }
     }
 
+    // dbg!(&result);
     modulus_i128::<N>(&mut result);
     // for c_i in result.iter() {
     //     println!("---");
@@ -178,17 +212,23 @@ pub fn naive_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
     //     println!("{:?}", (*c_i as i64) as i128);
     //     assert_eq!(*c_i, (*c_i as i64) as i128, "{:?}", c_i);
     // }
-
-    // let q: i128 = 65537;
-    // let result: Vec<i64> = result
-    //     .iter()
-    //     // .map(|c_i| ((c_i % q + q) % q) as i64)
-    //     .map(|c_i| (c_i % q) as i64)
-    //     // .map(|c_i| *c_i as i64)
-    //     .collect();
-    // result
-
     result.iter().map(|c| *c as i64).collect()
+}
+
+// wip
+pub fn mod_centered_q<const Q: u64, const N: usize>(p: Vec<i128>) -> R<N> {
+    let q: i128 = Q as i128;
+    let r = p
+        .iter()
+        .map(|v| {
+            let mut res = v % q;
+            if res > q / 2 {
+                res = res - q;
+            }
+            res
+        })
+        .collect::<Vec<i128>>();
+    R::<N>::from_vec(r.iter().map(|v| *v as i64).collect::<Vec<i64>>())
 }
 
 // mul by u64
@@ -212,5 +252,99 @@ impl<const N: usize> ops::Neg for R<N> {
 
     fn neg(self) -> Self::Output {
         Self(array::from_fn(|i| -self.0[i]))
+    }
+}
+
+impl<const N: usize> R<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut str = "";
+        let mut zero = true;
+        for (i, coeff) in self.0.iter().enumerate().rev() {
+            if *coeff == 0 {
+                continue;
+            }
+            zero = false;
+            f.write_str(str)?;
+            if *coeff != 1 {
+                f.write_str(coeff.to_string().as_str())?;
+                if i > 0 {
+                    f.write_str("*")?;
+                }
+            }
+            if *coeff == 1 && i == 0 {
+                f.write_str(coeff.to_string().as_str())?;
+            }
+            if i == 1 {
+                f.write_str("x")?;
+            } else if i > 1 {
+                f.write_str("x^")?;
+                f.write_str(i.to_string().as_str())?;
+            }
+            str = " + ";
+        }
+        if zero {
+            f.write_str("0")?;
+        }
+
+        f.write_str(" mod Z")?;
+        f.write_str("/(X^")?;
+        f.write_str(N.to_string().as_str())?;
+        f.write_str("+1)")?;
+        Ok(())
+    }
+}
+impl<const N: usize> fmt::Display for R<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt(f)?;
+        Ok(())
+    }
+}
+impl<const N: usize> fmt::Debug for R<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt(f)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    #[test]
+    fn test_mul() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const N: usize = 2;
+        let q: i64 = Q as i64;
+
+        // test vectors generated with SageMath
+        let a: [i64; N] = [q - 1, q - 1];
+        let b: [i64; N] = [q - 1, q - 1];
+        let c: [i64; N] = [0, 8589934592];
+        test_mul_opt::<Q, N>(a, b, c)?;
+
+        let a: [i64; N] = [1, q - 1];
+        let b: [i64; N] = [1, q - 1];
+        let c: [i64; N] = [-4294967295, 131072];
+        test_mul_opt::<Q, N>(a, b, c)?;
+
+        Ok(())
+    }
+    fn test_mul_opt<const Q: u64, const N: usize>(
+        a: [i64; N],
+        b: [i64; N],
+        expected_c: [i64; N],
+    ) -> Result<()> {
+        let mut a = R::new(a);
+        let mut b = R::new(b);
+        dbg!(&a);
+        dbg!(&b);
+        let expected_c = R::new(expected_c);
+
+        let mut c = naive_mul(&mut a, &mut b);
+        modulus::<N>(&mut c);
+        dbg!(R::<N>::from_vec(c.clone()));
+        assert_eq!(c, expected_c.0.to_vec());
+        Ok(())
     }
 }
