@@ -136,7 +136,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
         let uniform_distr = Uniform::new(0_f64, Q as f64);
-        let a = PR::<Q, N>::rand(&mut rng, uniform_distr)?;
+        let a = PR::<Q, N>::rand_f64(&mut rng, uniform_distr)?;
         // let a = PR::<Q, N>::new_from_u64(vec![36, 21, 9, 19]);
 
         // let a_padded_coeffs: [Zq<Q>; 2 * N] =
@@ -181,7 +181,7 @@ mod tests {
         let ntt = NTT::<Q, N>::new()?;
 
         let rng = rand::thread_rng();
-        let a = PR::<Q, { 2 * N }>::rand(rng, Uniform::new(0_f64, (Q - 1) as f64))?;
+        let a = PR::<Q, { 2 * N }>::rand_f64(rng, Uniform::new(0_f64, (Q - 1) as f64))?;
         let a = a.coeffs;
         dbg!(&a);
         let a_ntt = matrix_vec_product(&ntt.ntt, &a.to_vec())?;
@@ -189,6 +189,7 @@ mod tests {
         let a_intt = matrix_vec_product(&ntt.intt, &a_ntt)?;
         dbg!(&a_intt);
         assert_eq!(a_intt, a);
+        // TODO bench
 
         Ok(())
     }
