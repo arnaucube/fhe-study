@@ -12,22 +12,36 @@ pub struct Zq<const Q: u64>(pub u64);
 //     }
 // }
 
+pub(crate) fn modulus_u64<const Q: u64>(e: u64) -> u64 {
+    (e % Q + Q) % Q
+}
 impl<const Q: u64> Zq<Q> {
-    pub fn new(e: u64) -> Self {
+    pub fn from_u64(e: u64) -> Self {
         if e >= Q {
-            return Zq(e % Q);
+            // (e % Q + Q) % Q
+            return Zq(modulus_u64::<Q>(e));
+            // return Zq(e % Q);
         }
         Zq(e)
     }
     pub fn from_f64(e: f64) -> Self {
         // WIP method
         let e: i64 = e.round() as i64;
-        if e < 0 {
-            return Zq((Q as i64 + e) as u64);
-        } else if e >= Q as i64 {
-            return Zq((e % Q as i64) as u64);
+        let q = Q as i64;
+        if e < 0 || e >= q {
+            return Zq(((e % q + q) % q) as u64);
         }
         Zq(e as u64)
+
+        // if e < 0 {
+        //     // dbg!(&e);
+        //     // dbg!(Zq::<Q>(((Q as i64 + e) % Q as i64) as u64));
+        //     // return Zq(((Q as i64 + e) % Q as i64) as u64);
+        //     return Zq(e as u64 % Q);
+        // } else if e >= Q as i64 {
+        //     return Zq((e % Q as i64) as u64);
+        // }
+        // Zq(e as u64)
     }
     pub fn from_bool(b: bool) -> Self {
         if b {
@@ -83,7 +97,7 @@ impl<const Q: u64> Zq<Q> {
         // if t < 0 {
         //     t = t + q;
         // }
-        return Zq::new(t);
+        return Zq::from_u64(t);
     }
     pub fn inv(self) -> Zq<Q> {
         let (g, x, _) = Self::egcd(self.0 as i128, Q as i128);

@@ -7,5 +7,6 @@ edition = "2024"
 anyhow = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+itertools = { workspace = true }
 
 arithmetic = { path="../arithmetic" }

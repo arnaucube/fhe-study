@@ -102,7 +102,7 @@ mod tests {
     use rand_distr::Uniform;
 
     use crate::ring::matrix_vec_product;
-    use crate::ring::PR;
+    use crate::ring::Rq;
 
     #[test]
     fn roots_of_unity() -> Result<()> {
@@ -136,7 +136,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
         let uniform_distr = Uniform::new(0_f64, Q as f64);
-        let a = PR::<Q, N>::rand_f64(&mut rng, uniform_distr)?;
+        let a = Rq::<Q, N>::rand_f64(&mut rng, uniform_distr)?;
         // let a = PR::<Q, N>::new_from_u64(vec![36, 21, 9, 19]);
 
         // let a_padded_coeffs: [Zq<Q>; 2 * N] =
@@ -148,7 +148,7 @@ mod tests {
         let a_intt: Vec<Zq<Q>> = matrix_vec_product(&v_inv, &a_ntt)?;
         assert_eq!(a_intt, a_padded);
         let a_intt_arr: [Zq<Q>; N] = std::array::from_fn(|i| a_intt[i]);
-        assert_eq!(PR::new(a_intt_arr, None), a);
+        assert_eq!(Rq::new(a_intt_arr, None), a);
 
         Ok(())
     }
@@ -162,7 +162,7 @@ mod tests {
 
         let a: Vec<Zq<Q>> = vec![256, 256, 256, 256, 0, 0, 0, 0]
             .iter()
-            .map(|&e| Zq::new(e))
+            .map(|&e| Zq::from_u64(e))
             .collect();
         let a_ntt = matrix_vec_product(&ntt.ntt, &a)?;
         let a_intt = matrix_vec_product(&ntt.intt, &a_ntt)?;
@@ -181,7 +181,7 @@ mod tests {
         let ntt = NTT::<Q, N>::new()?;
 
         let rng = rand::thread_rng();
-        let a = PR::<Q, { 2 * N }>::rand_f64(rng, Uniform::new(0_f64, (Q - 1) as f64))?;
+        let a = Rq::<Q, { 2 * N }>::rand_f64(rng, Uniform::new(0_f64, (Q - 1) as f64))?;
         let a = a.coeffs;
         dbg!(&a);
         let a_ntt = matrix_vec_product(&ntt.ntt, &a.to_vec())?;
