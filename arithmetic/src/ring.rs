@@ -85,6 +85,11 @@ impl<const Q: u64, const N: usize> PR<Q, N> {
             evals: None,
         })
     }
+    // Warning: this method assumes Q < P
+    pub fn remodule<const P: u64>(&self) -> PR<P, N> {
+        assert!(Q < P);
+        PR::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
+    }
 
     // TODO review if needed, or if with this interface
     pub fn mul_by_matrix(&self, m: &Vec<Vec<Zq<Q>>>) -> Result<Vec<Zq<Q>>> {
