@@ -1,8 +1,8 @@
 //! Polynomial ring Z[X]/(X^N+1)
 //!
 
-use anyhow::{anyhow, Result};
-use rand::{distributions::Distribution, Rng};
+use anyhow::{Result, anyhow};
+use rand::{Rng, distributions::Distribution};
 use std::array;
 use std::fmt;
 use std::ops;

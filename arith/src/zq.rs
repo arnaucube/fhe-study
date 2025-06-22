@@ -44,11 +44,7 @@ impl<const Q: u64> Zq<Q> {
         // Zq(e as u64)
     }
     pub fn from_bool(b: bool) -> Self {
-        if b {
-            Zq(1)
-        } else {
-            Zq(0)
-        }
+        if b { Zq(1) } else { Zq(0) }
     }
     pub fn zero() -> Self {
         Zq(0u64)
