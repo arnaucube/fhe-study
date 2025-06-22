@@ -2,7 +2,7 @@
 //! Vandermonde matrix.
 use crate::zq::Zq;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct NTT<const Q: u64, const N: usize> {
@@ -35,6 +35,8 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
             intt,
         })
     }
+    /// returns the Vandermonde matrix for the given primitive root of unity.
+    /// Vandermonde matrix: https://en.wikipedia.org/wiki/Vandermonde_matrix
     pub fn vandermonde(primitive: Zq<Q>) -> Vec<Vec<Zq<Q>>> {
         let mut v: Vec<Vec<Zq<Q>>> = vec![];
         let n = (2 * N) as u64;
@@ -52,6 +54,7 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
         v
     }
     // specifically for the Vandermonde matrix
+    /// returns the inverse Vandermonde matrix
     pub fn invert_vandermonde(v: &Vec<Vec<Zq<Q>>>) -> Vec<Vec<Zq<Q>>> {
         let n = 2 * N;
         // let n = N;
@@ -68,6 +71,8 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
         inv
     }
 
+    /// computes a primitive N-th root of unity using the method described by
+    /// Thomas Pornin in https://crypto.stackexchange.com/a/63616
     pub fn get_primitive_root_of_unity(n: u64) -> Result<Zq<Q>> {
         // using the method described by Thomas Pornin in
         // https://crypto.stackexchange.com/a/63616
@@ -101,8 +106,8 @@ mod tests {
     use super::*;
     use rand_distr::Uniform;
 
-    use crate::ring::Rq;
-    use crate::ring::matrix_vec_product;
+    use crate::ringq::matrix_vec_product;
+    use crate::ringq::Rq;
 
     #[test]
     fn roots_of_unity() -> Result<()> {

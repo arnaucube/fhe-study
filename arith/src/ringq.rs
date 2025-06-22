@@ -1,14 +1,14 @@
 //! Polynomial ring Z_q[X]/(X^N+1)
 //!
 
-use rand::{Rng, distributions::Distribution};
+use rand::{distributions::Distribution, Rng};
 use std::array;
 use std::fmt;
 use std::ops;
 
 use crate::ntt::NTT;
-use crate::zq::{Zq, modulus_u64};
-use anyhow::{Result, anyhow};
+use crate::zq::{modulus_u64, Zq};
+use anyhow::{anyhow, Result};
 
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
@@ -231,7 +231,10 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     }
 
     pub fn infinity_norm(&self) -> u64 {
-        self.coeffs().iter().map(|x| x.0).fold(0, |a, b| a.max(b))
+        self.coeffs()
+            .iter()
+            .map(|x| if x.0 > (Q / 2) { Q - x.0 } else { x.0 })
+            .fold(0, |a, b| a.max(b))
     }
 }
 pub fn matrix_vec_product<const Q: u64>(m: &Vec<Vec<Zq<Q>>>, v: &Vec<Zq<Q>>) -> Result<Vec<Zq<Q>>> {
@@ -369,6 +372,21 @@ impl<const Q: u64, const N: usize> ops::Mul<&u64> for &Rq<Q, N> {
         self.mul_by_u64(*s)
     }
 }
+// mul by f64
+impl<const Q: u64, const N: usize> ops::Mul<f64> for Rq<Q, N> {
+    type Output = Self;
+
+    fn mul(self, s: f64) -> Self {
+        self.mul_by_f64(s)
+    }
+}
+impl<const Q: u64, const N: usize> ops::Mul<&f64> for &Rq<Q, N> {
+    type Output = Rq<Q, N>;
+
+    fn mul(self, s: &f64) -> Self::Output {
+        self.mul_by_f64(*s)
+    }
+}
 
 impl<const Q: u64, const N: usize> ops::Neg for Rq<Q, N> {
     type Output = Self;
@@ -473,22 +491,6 @@ mod tests {
         );
     }
 
-    fn test_mul_opt<const Q: u64, const N: usize>(
-        a: [u64; N],
-        b: [u64; N],
-        expected_c: [u64; N],
-    ) -> Result<()> {
-        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
-        let mut a = Rq::new(a, None);
-        let b: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(b[i]));
-        let mut b = Rq::new(b, None);
-        let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(expected_c[i]));
-        let expected_c = Rq::new(expected_c, None);
-
-        let c = mul_mut(&mut a, &mut b);
-        assert_eq!(c, expected_c);
-        Ok(())
-    }
     #[test]
     fn test_mul() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
@@ -506,6 +508,22 @@ mod tests {
 
         // TODO more testvectors
 
+        Ok(())
+    }
+    fn test_mul_opt<const Q: u64, const N: usize>(
+        a: [u64; N],
+        b: [u64; N],
+        expected_c: [u64; N],
+    ) -> Result<()> {
+        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
+        let mut a = Rq::new(a, None);
+        let b: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(b[i]));
+        let mut b = Rq::new(b, None);
+        let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(expected_c[i]));
+        let expected_c = Rq::new(expected_c, None);
+
+        let c = mul_mut(&mut a, &mut b);
+        assert_eq!(c, expected_c);
         Ok(())
     }
 }
