@@ -56,6 +56,13 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
         crate::R::<N>::from(self)
     }
 
+    pub fn zero() -> Self {
+        let coeffs = array::from_fn(|_| Zq::zero());
+        Self {
+            coeffs,
+            evals: None,
+        }
+    }
     pub fn from_vec(coeffs: Vec<Zq<Q>>) -> Self {
         let mut p = coeffs;
         modulus::<Q, N>(&mut p);
