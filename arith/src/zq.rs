@@ -117,6 +117,11 @@ impl<const Q: u64> Zq<Q> {
             (g, y - (b / a) * x, x)
         }
     }
+
+    /// perform the mod switch operation from Q to Q', where Q2=Q'
+    pub fn mod_switch<const Q2: u64>(&self) -> Zq<Q2> {
+        Zq::<Q2>::from_u64(((self.0 as f64 * Q2 as f64) / Q as f64).round() as u64)
+    }
 }
 
 impl<const Q: u64> Zq<Q> {

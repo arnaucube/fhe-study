@@ -52,6 +52,9 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     pub fn coeffs(&self) -> [Zq<Q>; N] {
         self.coeffs
     }
+    pub fn compute_evals(&mut self) {
+        self.evals = Some(NTT::<Q, N>::ntt(self.coeffs));
+    }
     pub fn to_r(self) -> crate::R<N> {
         crate::R::<N>::from(self)
     }
@@ -131,6 +134,15 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     pub fn remodule<const P: u64>(&self) -> Rq<P, N> {
         Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
     }
+
+    /// perform the mod switch operation from Q to Q', where Q2=Q'
+    fn mod_switch<const Q2: u64>(&self) -> Rq<Q2, N> {
+        Rq::<Q2, N> {
+            coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<Q2>()),
+            evals: None,
+        }
+    }
+
     // applies mod(T) to all coefficients of self
     pub fn coeffs_mod<const T: u64>(&self) -> Self {
         Rq::<Q, N>::from_vec_u64(
@@ -235,6 +247,9 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
             .iter()
             .map(|x| if x.0 > (Q / 2) { Q - x.0 } else { x.0 })
             .fold(0, |a, b| a.max(b))
+    }
+    pub fn mod_centered_q(&self) -> crate::ring::R<N> {
+        self.to_r().mod_centered_q::<Q>()
     }
 }
 pub fn matrix_vec_product<const Q: u64>(m: &Vec<Vec<Zq<Q>>>, v: &Vec<Zq<Q>>) -> Result<Vec<Zq<Q>>> {
@@ -399,6 +414,7 @@ impl<const Q: u64, const N: usize> ops::Neg for Rq<Q, N> {
     }
 }
 
+// note: this assumes that Q is prime
 fn mul_mut<const Q: u64, const N: usize>(lhs: &mut Rq<Q, N>, rhs: &mut Rq<Q, N>) -> Rq<Q, N> {
     // reuse evaluations if already computed
     if !lhs.evals.is_some() {
@@ -414,6 +430,8 @@ fn mul_mut<const Q: u64, const N: usize>(lhs: &mut Rq<Q, N>, rhs: &mut Rq<Q, N>)
     let c = NTT::<Q, { N }>::intt(c_ntt);
     Rq::new(c, Some(c_ntt))
 }
+// note: this assumes that Q is prime
+// TODO impl karatsuba for non-prime Q
 fn mul<const Q: u64, const N: usize>(lhs: &Rq<Q, N>, rhs: &Rq<Q, N>) -> Rq<Q, N> {
     // reuse evaluations if already computed
     let lhs_evals = if lhs.evals.is_some() {
