@@ -1,7 +1,8 @@
 [workspace]
 members = [
+    "arith",
     "bfv",
-    "arith"
+    "ckks"
 ]
 
 resolver = "2"

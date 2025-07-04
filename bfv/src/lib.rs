@@ -106,7 +106,10 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
 
         // secret key
         // let s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
-        let s = Rq::<Q, N>::rand_u64(&mut rng, Xi_key)?;
+        let mut s = Rq::<Q, N>::rand_u64(&mut rng, Xi_key)?;
+        // since s is going to be multiplied by other Rq elements, already
+        // compute its NTT
+        s.compute_evals();
 
         // pk = (-a * s + e, a)
         let a = Rq::<Q, N>::rand_u64(&mut rng, Uniform::new(0_u64, Q))?;
@@ -508,7 +511,7 @@ mod tests {
     #[test]
     fn test_mul_relin() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 4;
+        const N: usize = 16;
         const T: u64 = 2; // plaintext modulus
         type S = BFV<Q, N, T>;
 
@@ -518,7 +521,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let msg_dist = Uniform::new(0_u64, T);
 
-        for _ in 0..100 {
+        for _ in 0..1_000 {
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
 
