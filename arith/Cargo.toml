@@ -7,3 +7,11 @@ edition = "2024"
 anyhow = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+
+# TMP: the next 4 imports are TMP, to solve systems of linear equations. Used
+# for the CKKS encoding step, probably remvoed once in ckks the encoding is done
+# as in 2018-1043 or 2018-1073.
+num = "0.4.3"
+num-complex = "0.4.6"
+ndarray = "0.16.1"
+ndarray-linalg = { version = "0.17.0", features = ["intel-mkl"] }

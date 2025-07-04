@@ -53,6 +53,29 @@ impl<const N: usize> R<N> {
             .collect();
         crate::Rq::<Q, N>::from_vec_f64(r)
     }
+
+    pub fn infinity_norm(&self) -> u64 {
+        self.coeffs()
+            .iter()
+            // .map(|x| if x.0 > (Q / 2) { Q - x.0 } else { x.0 })
+            .map(|x| x.abs() as u64)
+            .fold(0, |a, b| a.max(b))
+    }
+    pub fn mod_centered_q<const Q: u64>(&self) -> R<N> {
+        let q = Q as i64;
+        let r = self
+            .0
+            .iter()
+            .map(|v| {
+                let mut res = v % q;
+                if res > q / 2 {
+                    res = res - q;
+                }
+                res
+            })
+            .collect::<Vec<i64>>();
+        R::<N>::from_vec(r)
+    }
 }
 
 pub fn mul_div_round<const Q: u64, const N: usize>(
