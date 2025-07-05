@@ -153,10 +153,9 @@ mod tests {
     #[test]
     fn test_encode_decode() -> Result<()> {
         const Q: u64 = 1024;
-        // const N: usize = 4; // ie. m=2*n=8
-        const N: usize = 16;
+        const N: usize = 32;
 
-        let T = 16; // WIP
+        let T = 128; // WIP
         let mut rng = rand::thread_rng();
 
         for _ in 0..100 {
