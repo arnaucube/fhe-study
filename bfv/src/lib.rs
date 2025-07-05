@@ -105,7 +105,7 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         // secret key
-        // let s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
+        // let mut s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
         let mut s = Rq::<Q, N>::rand_u64(&mut rng, Xi_key)?;
         // since s is going to be multiplied by other Rq elements, already
         // compute its NTT
