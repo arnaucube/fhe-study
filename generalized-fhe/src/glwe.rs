@@ -1,10 +1,9 @@
 use anyhow::Result;
-use itertools::zip_eq;
 use rand::Rng;
 use rand_distr::{Normal, Uniform};
-use std::{array, ops};
+use std::ops::Add;
 
-use arith::{Ring, Rq, R, TR};
+use arith::{Ring, Rq, TR};
 
 const ERR_SIGMA: f64 = 3.2;
 
@@ -80,6 +79,24 @@ impl<const Q: u64, const N: usize, const K: usize> GLWE<Q, N, K> {
     }
 }
 
+impl<const Q: u64, const N: usize, const K: usize> Add<GLWE<Q, N, K>> for GLWE<Q, N, K> {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        let a: TR<Rq<Q, N>, K> = self.0 + other.0;
+        let b: Rq<Q, N> = self.1 + other.1;
+        Self(a, b)
+    }
+}
+
+impl<const Q: u64, const N: usize, const K: usize> Add<Rq<Q, N>> for GLWE<Q, N, K> {
+    type Output = Self;
+    fn add(self, plaintext: Rq<Q, N>) -> Self {
+        let a: TR<Rq<Q, N>, K> = self.0;
+        let b: Rq<Q, N> = self.1 + plaintext;
+        Self(a, b)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -108,6 +125,68 @@ mod tests {
             let m_recovered = c.decrypt(&sk, delta);
 
             assert_eq!(m, m_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_addition() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const N: usize = 128;
+        const T: u64 = 20;
+        const K: usize = 16;
+        type S = GLWE<Q, N, K>;
+
+        let delta: u64 = Q / T; // floored
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..200 {
+            let (sk, pk) = S::new_key(&mut rng)?;
+
+            let msg_dist = Uniform::new(0_u64, T);
+            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+
+            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
+            let c2 = S::encrypt(&mut rng, &pk, &m2, delta)?;
+
+            let c3 = c1 + c2;
+
+            let m3_recovered = c3.decrypt(&sk, delta);
+
+            assert_eq!(m1 + m2, m3_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_plaintext() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const N: usize = 128;
+        const T: u64 = 32;
+        const K: usize = 16;
+        type S = GLWE<Q, N, K>;
+
+        let delta: u64 = Q / T; // floored
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..200 {
+            let (sk, pk) = S::new_key(&mut rng)?;
+
+            let msg_dist = Uniform::new(0_u64, T);
+            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m2_scaled: Rq<Q, N> = m2.remodule::<Q>() * delta;
+
+            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
+
+            let c3 = c1 + m2_scaled;
+
+            let m3_recovered = c3.decrypt(&sk, delta);
+
+            assert_eq!(m1 + m2, m3_recovered);
         }
 
         Ok(())

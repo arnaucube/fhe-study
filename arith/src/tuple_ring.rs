@@ -13,7 +13,7 @@ use crate::Ring;
 /// Tuple of K Ring (Rq) elements. We use Vec<R> to allocate it in the heap,
 /// since if using a fixed-size array it would overflow the stack.
 #[derive(Clone, Debug)]
-pub struct TR<R: Ring, const K: usize>(Vec<R>);
+pub struct TR<R: Ring, const K: usize>(pub Vec<R>);
 
 impl<R: Ring, const K: usize> TR<R, K> {
     pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
