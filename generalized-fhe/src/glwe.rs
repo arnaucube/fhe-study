@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rand::Rng;
 use rand_distr::{Normal, Uniform};
-use std::ops::Add;
+use std::ops::{Add, Mul};
 
 use arith::{Ring, Rq, TR};
 
@@ -96,6 +96,19 @@ impl<const Q: u64, const N: usize, const K: usize> Add<Rq<Q, N>> for GLWE<Q, N, 
         Self(a, b)
     }
 }
+impl<const Q: u64, const N: usize, const K: usize> Mul<Rq<Q, N>> for GLWE<Q, N, K> {
+    type Output = Self;
+    fn mul(self, plaintext: Rq<Q, N>) -> Self {
+        // first compute the NTT for plaintext, to avoid computing it at each
+        // iteration, speeding up the multiplications
+        let mut plaintext = plaintext.clone();
+        plaintext.compute_evals();
+
+        let a: TR<Rq<Q, N>, K> = TR(self.0 .0.iter().map(|r_i| *r_i * plaintext).collect());
+        let b: Rq<Q, N> = self.1 * plaintext;
+        Self(a, b)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -187,6 +200,35 @@ mod tests {
             let m3_recovered = c3.decrypt(&sk, delta);
 
             assert_eq!(m1 + m2, m3_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mul_plaintext() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const N: usize = 16;
+        const T: u64 = 4;
+        const K: usize = 16;
+        type S = GLWE<Q, N, K>;
+
+        let delta: u64 = Q / T; // floored
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..200 {
+            let (sk, pk) = S::new_key(&mut rng)?;
+
+            let msg_dist = Uniform::new(0_u64, T);
+            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m2: Rq<Q, N> = m2.remodule::<Q>();
+            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
+
+            let c3 = c1 * m2;
+
+            let m3_recovered: Rq<T, N> = c3.decrypt(&sk, delta);
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m3_recovered);
         }
 
         Ok(())
