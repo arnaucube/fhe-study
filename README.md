@@ -5,3 +5,5 @@ Implementations from scratch done while studying some FHE papers; do not use in 
 - `generalized-fhe`: contains the structs and logic for RLWE, GLWE, GLev, GGSW, RGSW cryptosystems, which can be used by concrete FHE schemes.
 - `bfv`: https://eprint.iacr.org/2012/144.pdf scheme implementation
 - `ckks`: https://eprint.iacr.org/2016/421.pdf scheme implementation
+
+`cargo test --release`
