@@ -10,7 +10,7 @@ use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops;
 
-use arith::{Rq, R};
+use arith::{Ring, Rq, R};
 
 // error deviation for the Gaussian(Normal) distribution
 // sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5

@@ -4,11 +4,14 @@
 use rand::{distributions::Distribution, Rng};
 use std::array;
 use std::fmt;
-use std::ops;
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::ntt::NTT;
 use crate::zq::{modulus_u64, Zq};
 use anyhow::{anyhow, Result};
+
+use crate::Ring;
 
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
@@ -19,6 +22,28 @@ pub struct Rq<const Q: u64, const N: usize> {
     // evals are set when doig a PRxPR multiplication, so it can be reused in future
     // multiplications avoiding recomputing it
     pub(crate) evals: Option<[Zq<Q>; N]>,
+}
+
+impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
+    type C = Zq<Q>;
+    fn coeffs(&self) -> Vec<Self::C> {
+        self.coeffs.to_vec()
+    }
+    fn zero() -> Self {
+        let coeffs = array::from_fn(|_| Zq::zero());
+        Self {
+            coeffs,
+            evals: None,
+        }
+    }
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
+        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
+        Self {
+            coeffs,
+            evals: None,
+        }
+    }
 }
 
 // TODO define a trait "PolynomialRingTrait" or similar, so that when other structs use it can just
@@ -59,13 +84,14 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
         crate::R::<N>::from(self)
     }
 
-    pub fn zero() -> Self {
-        let coeffs = array::from_fn(|_| Zq::zero());
-        Self {
-            coeffs,
-            evals: None,
-        }
-    }
+    // TODO rm since it is implemented in Ring trait impl
+    // pub fn zero() -> Self {
+    //     let coeffs = array::from_fn(|_| Zq::zero());
+    //     Self {
+    //         coeffs,
+    //         evals: None,
+    //     }
+    // }
     pub fn from_vec(coeffs: Vec<Zq<Q>>) -> Self {
         let mut p = coeffs;
         modulus::<Q, N>(&mut p);
@@ -292,7 +318,7 @@ impl<const Q: u64, const N: usize> PartialEq for Rq<Q, N> {
         self.coeffs == other.coeffs
     }
 }
-impl<const Q: u64, const N: usize> ops::Add<Rq<Q, N>> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> Add<Rq<Q, N>> for Rq<Q, N> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -312,7 +338,7 @@ impl<const Q: u64, const N: usize> ops::Add<Rq<Q, N>> for Rq<Q, N> {
         // Self(r.iter_mut().map(|e| e.r#mod()).collect()) // TODO mod should happen auto in +
     }
 }
-impl<const Q: u64, const N: usize> ops::Add<&Rq<Q, N>> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Add<&Rq<Q, N>> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn add(self, rhs: &Rq<Q, N>) -> Self::Output {
@@ -322,7 +348,28 @@ impl<const Q: u64, const N: usize> ops::Add<&Rq<Q, N>> for &Rq<Q, N> {
         }
     }
 }
-impl<const Q: u64, const N: usize> ops::Sub<Rq<Q, N>> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> AddAssign for Rq<Q, N> {
+    fn add_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.coeffs[i] += rhs.coeffs[i];
+        }
+    }
+}
+
+impl<const Q: u64, const N: usize> Sum<Rq<Q, N>> for Rq<Q, N> {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        let mut acc = Rq::<Q, N>::zero();
+        for e in iter {
+            acc += e;
+        }
+        acc
+    }
+}
+
+impl<const Q: u64, const N: usize> Sub<Rq<Q, N>> for Rq<Q, N> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -332,7 +379,7 @@ impl<const Q: u64, const N: usize> ops::Sub<Rq<Q, N>> for Rq<Q, N> {
         }
     }
 }
-impl<const Q: u64, const N: usize> ops::Sub<&Rq<Q, N>> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Sub<&Rq<Q, N>> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn sub(self, rhs: &Rq<Q, N>) -> Self::Output {
@@ -342,14 +389,22 @@ impl<const Q: u64, const N: usize> ops::Sub<&Rq<Q, N>> for &Rq<Q, N> {
         }
     }
 }
-impl<const Q: u64, const N: usize> ops::Mul<Rq<Q, N>> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> SubAssign for Rq<Q, N> {
+    fn sub_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.coeffs[i] -= rhs.coeffs[i];
+        }
+    }
+}
+
+impl<const Q: u64, const N: usize> Mul<Rq<Q, N>> for Rq<Q, N> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         mul(&self, &rhs)
     }
 }
-impl<const Q: u64, const N: usize> ops::Mul<&Rq<Q, N>> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<&Rq<Q, N>> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn mul(self, rhs: &Rq<Q, N>) -> Self::Output {
@@ -358,14 +413,14 @@ impl<const Q: u64, const N: usize> ops::Mul<&Rq<Q, N>> for &Rq<Q, N> {
 }
 
 // mul by Zq element
-impl<const Q: u64, const N: usize> ops::Mul<Zq<Q>> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<Zq<Q>> for Rq<Q, N> {
     type Output = Self;
 
     fn mul(self, s: Zq<Q>) -> Self {
         self.mul_by_zq(&s)
     }
 }
-impl<const Q: u64, const N: usize> ops::Mul<&Zq<Q>> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<&Zq<Q>> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn mul(self, s: &Zq<Q>) -> Self::Output {
@@ -373,14 +428,14 @@ impl<const Q: u64, const N: usize> ops::Mul<&Zq<Q>> for &Rq<Q, N> {
     }
 }
 // mul by u64
-impl<const Q: u64, const N: usize> ops::Mul<u64> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<u64> for Rq<Q, N> {
     type Output = Self;
 
     fn mul(self, s: u64) -> Self {
         self.mul_by_u64(s)
     }
 }
-impl<const Q: u64, const N: usize> ops::Mul<&u64> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<&u64> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn mul(self, s: &u64) -> Self::Output {
@@ -388,14 +443,14 @@ impl<const Q: u64, const N: usize> ops::Mul<&u64> for &Rq<Q, N> {
     }
 }
 // mul by f64
-impl<const Q: u64, const N: usize> ops::Mul<f64> for Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<f64> for Rq<Q, N> {
     type Output = Self;
 
     fn mul(self, s: f64) -> Self {
         self.mul_by_f64(s)
     }
 }
-impl<const Q: u64, const N: usize> ops::Mul<&f64> for &Rq<Q, N> {
+impl<const Q: u64, const N: usize> Mul<&f64> for &Rq<Q, N> {
     type Output = Rq<Q, N>;
 
     fn mul(self, s: &f64) -> Self::Output {
@@ -403,7 +458,7 @@ impl<const Q: u64, const N: usize> ops::Mul<&f64> for &Rq<Q, N> {
     }
 }
 
-impl<const Q: u64, const N: usize> ops::Neg for Rq<Q, N> {
+impl<const Q: u64, const N: usize> Neg for Rq<Q, N> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
