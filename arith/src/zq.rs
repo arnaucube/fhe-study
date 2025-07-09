@@ -1,3 +1,5 @@
+use anyhow::{anyhow, Result};
+use rand::{distributions::Distribution, Rng};
 use std::fmt;
 use std::ops;
 
@@ -16,6 +18,12 @@ pub(crate) fn modulus_u64<const Q: u64>(e: u64) -> u64 {
     (e % Q + Q) % Q
 }
 impl<const Q: u64> Zq<Q> {
+    pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+        // TODO WIP
+        let r: f64 = dist.sample(&mut rng);
+        Self::from_f64(r)
+        // Self::from_u64(r.round() as u64)
+    }
     pub fn from_u64(e: u64) -> Self {
         if e >= Q {
             // (e % Q + Q) % Q

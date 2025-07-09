@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+itertools = { workspace = true }
 
 # TMP: the next 4 imports are TMP, to solve systems of linear equations. Used
 # for the CKKS encoding step, probably remvoed once in ckks the encoding is done

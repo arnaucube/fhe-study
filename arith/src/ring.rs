@@ -1,13 +1,37 @@
 //! Polynomial ring Z[X]/(X^N+1)
 //!
 
+use anyhow::Result;
+use rand::{distributions::Distribution, Rng};
 use std::array;
 use std::fmt;
-use std::ops;
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+use crate::Ring;
+
+// TODO rename to not have name conflicts with the Ring trait (R: Ring)
 // PolynomialRing element, where the PolynomialRing is R = Z[X]/(X^n +1)
 #[derive(Clone, Copy)]
 pub struct R<const N: usize>(pub [i64; N]);
+
+impl<const N: usize> Ring for R<N> {
+    type C = i64;
+    fn coeffs(&self) -> Vec<Self::C> {
+        self.0.to_vec()
+    }
+    fn zero() -> Self {
+        let coeffs: [i64; N] = array::from_fn(|_| 0i64);
+        Self(coeffs)
+    }
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+        // let coeffs: [i64; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
+        let coeffs: [i64; N] = array::from_fn(|_| dist.sample(&mut rng).round() as i64);
+        Self(coeffs)
+        // let coeffs: [C; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
+        // Self(coeffs)
+    }
+}
 
 impl<const Q: u64, const N: usize> From<crate::ringq::Rq<Q, N>> for R<N> {
     fn from(rq: crate::ringq::Rq<Q, N>) -> Self {
@@ -120,42 +144,72 @@ impl<const N: usize> PartialEq for R<N> {
         self.0 == other.0
     }
 }
-impl<const N: usize> ops::Add<R<N>> for R<N> {
+impl<const N: usize> Add<R<N>> for R<N> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
         Self(array::from_fn(|i| self.0[i] + rhs.0[i]))
     }
 }
-impl<const N: usize> ops::Add<&R<N>> for &R<N> {
+impl<const N: usize> Add<&R<N>> for &R<N> {
     type Output = R<N>;
 
     fn add(self, rhs: &R<N>) -> Self::Output {
         R(array::from_fn(|i| self.0[i] + rhs.0[i]))
     }
 }
-impl<const N: usize> ops::Sub<R<N>> for R<N> {
+impl<const N: usize> AddAssign for R<N> {
+    fn add_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.0[i] += rhs.0[i];
+        }
+    }
+}
+
+impl<const N: usize> Sum<R<N>> for R<N> {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        let mut acc = R::<N>::zero();
+        for e in iter {
+            acc += e;
+        }
+        acc
+    }
+}
+
+impl<const N: usize> Sub<R<N>> for R<N> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
         Self(array::from_fn(|i| self.0[i] - rhs.0[i]))
     }
 }
-impl<const N: usize> ops::Sub<&R<N>> for &R<N> {
+impl<const N: usize> Sub<&R<N>> for &R<N> {
     type Output = R<N>;
 
     fn sub(self, rhs: &R<N>) -> Self::Output {
         R(array::from_fn(|i| self.0[i] - rhs.0[i]))
     }
 }
-impl<const N: usize> ops::Mul<R<N>> for R<N> {
+
+impl<const N: usize> SubAssign for R<N> {
+    fn sub_assign(&mut self, rhs: Self) {
+        for i in 0..N {
+            self.0[i] -= rhs.0[i];
+        }
+    }
+}
+
+impl<const N: usize> Mul<R<N>> for R<N> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         naive_poly_mul(&self, &rhs)
     }
 }
-impl<const N: usize> ops::Mul<&R<N>> for &R<N> {
+impl<const N: usize> Mul<&R<N>> for &R<N> {
     type Output = R<N>;
 
     fn mul(self, rhs: &R<N>) -> Self::Output {
@@ -255,14 +309,14 @@ pub fn mod_centered_q<const Q: u64, const N: usize>(p: Vec<i128>) -> R<N> {
 }
 
 // mul by u64
-impl<const N: usize> ops::Mul<u64> for R<N> {
+impl<const N: usize> Mul<u64> for R<N> {
     type Output = Self;
 
     fn mul(self, s: u64) -> Self {
         self.mul_by_i64(s as i64)
     }
 }
-impl<const N: usize> ops::Mul<&u64> for &R<N> {
+impl<const N: usize> Mul<&u64> for &R<N> {
     type Output = R<N>;
 
     fn mul(self, s: &u64) -> Self::Output {
@@ -270,7 +324,7 @@ impl<const N: usize> ops::Mul<&u64> for &R<N> {
     }
 }
 
-impl<const N: usize> ops::Neg for R<N> {
+impl<const N: usize> Neg for R<N> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
