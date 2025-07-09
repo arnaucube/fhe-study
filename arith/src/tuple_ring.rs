@@ -10,9 +10,6 @@ use std::{array, ops};
 
 use crate::Ring;
 
-// #[derive(Clone, Copy, Debug)]
-// pub struct TR<R: Ring, const K: usize>([R; K]);
-
 /// Tuple of K Ring (Rq) elements. We use Vec<R> to allocate it in the heap,
 /// since if using a fixed-size array it would overflow the stack.
 #[derive(Clone, Debug)]

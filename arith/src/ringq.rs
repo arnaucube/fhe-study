@@ -13,6 +13,9 @@ use anyhow::{anyhow, Result};
 
 use crate::Ring;
 
+// NOTE: currently using fixed-size arrays, but pending to see if with
+// real-world parameters the stack can keep up; if not will move everything to
+// use Vec.
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
 #[derive(Clone, Copy)]
