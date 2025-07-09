@@ -1,0 +1,12 @@
+[package]
+name = "generalized-fhe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+itertools = { workspace = true }
+
+arith = { path="../arith" }
