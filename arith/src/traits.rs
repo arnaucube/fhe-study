@@ -27,4 +27,6 @@ pub trait Ring:
     fn zero() -> Self;
     // note/wip/warning: dist (0,q) with f64, will output more '0=q' elements than other values
     fn rand(rng: impl Rng, dist: impl Distribution<f64>) -> Self;
+
+    fn decompose(&self, beta: u32, l: u32) -> Vec<Self>;
 }

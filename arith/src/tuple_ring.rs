@@ -16,6 +16,9 @@ use crate::Ring;
 pub struct TR<R: Ring, const K: usize>(pub Vec<R>);
 
 impl<R: Ring, const K: usize> TR<R, K> {
+    pub fn zero() -> Self {
+        Self((0..K).into_iter().map(|_| R::zero()).collect())
+    }
     pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
         Self(
             (0..K)
@@ -23,6 +26,11 @@ impl<R: Ring, const K: usize> TR<R, K> {
                 .map(|_| R::rand(&mut rng, &dist))
                 .collect(),
         )
+    }
+    // returns the decomposition of each polynomial element
+    pub fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
+        unimplemented!()
+        // self.0.iter().map(|r| r.decompose(beta, l)).collect() // this is Vec<Vec<Vec<R::C>>>
     }
 }
 

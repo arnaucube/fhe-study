@@ -47,6 +47,18 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
             evals: None,
         }
     }
+
+    // returns the decomposition of each polynomial coefficient, such
+    // decomposition will be a vecotor of length N, containint N vectors of Zq
+    fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
+        let elems: Vec<Vec<Zq<Q>>> = self.coeffs.iter().map(|r| r.decompose(beta, l)).collect();
+        // transpose it
+        let r: Vec<Vec<Zq<Q>>> = (0..elems[0].len())
+            .map(|i| (0..elems.len()).map(|j| elems[j][i]).collect())
+            .collect();
+        // convert it to Rq<Q,N>
+        r.iter().map(|a_i| Self::from_vec(a_i.clone())).collect()
+    }
 }
 
 impl<const Q: u64, const N: usize> From<crate::ring::R<N>> for Rq<Q, N> {
@@ -597,6 +609,33 @@ mod tests {
 
         let c = mul_mut(&mut a, &mut b);
         assert_eq!(c, expected_c);
+        Ok(())
+    }
+
+    #[test]
+    fn test_rq_decompose() -> Result<()> {
+        const Q: u64 = 16;
+        const N: usize = 4;
+        let beta = 4;
+        let l = 2;
+
+        let a = Rq::<Q, N>::from_vec_u64(vec![7u64, 14, 3, 6]);
+        let d = a.decompose(beta, l);
+
+        assert_eq!(
+            d[0],
+            vec![1u64, 3, 0, 1]
+                .iter()
+                .map(|e| Zq::<Q>::from_u64(*e))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            d[1],
+            vec![3u64, 2, 3, 2]
+                .iter()
+                .map(|e| Zq::<Q>::from_u64(*e))
+                .collect::<Vec<_>>()
+        );
         Ok(())
     }
 }

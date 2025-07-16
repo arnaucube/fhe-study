@@ -31,6 +31,12 @@ impl<const N: usize> Ring for R<N> {
         // let coeffs: [C; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
         // Self(coeffs)
     }
+
+    // returns the decomposition of each polynomial coefficient
+    fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
+        unimplemented!();
+        // array::from_fn(|i| self.coeffs[i].decompose(beta, l))
+    }
 }
 
 impl<const Q: u64, const N: usize> From<crate::ringq::Rq<Q, N>> for R<N> {

@@ -3,7 +3,7 @@ use rand::{distributions::Distribution, Rng};
 use std::fmt;
 use std::ops;
 
-// Z_q, integers modulus q, not necessarily prime
+/// Z_q, integers modulus q, not necessarily prime
 #[derive(Clone, Copy, PartialEq)]
 pub struct Zq<const Q: u64>(pub u64);
 
@@ -130,6 +130,28 @@ impl<const Q: u64> Zq<Q> {
     pub fn mod_switch<const Q2: u64>(&self) -> Zq<Q2> {
         Zq::<Q2>::from_u64(((self.0 as f64 * Q2 as f64) / Q as f64).round() as u64)
     }
+
+    // TODO more efficient method for when decomposing with base 2 (beta=2)
+    pub fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
+        let mut rem: u64 = self.0;
+        // next if is for cases in which beta does not divide Q (concretely
+        // beta^l!=Q). round to the nearest multiple of q/beta^l
+        if rem >= beta.pow(l) as u64 {
+            // rem = Q - 1 - (Q / beta as u64); // floor
+            return vec![Zq(beta as u64 - 1); l as usize];
+        }
+
+        let mut x: Vec<Self> = vec![];
+        for i in 1..l + 1 {
+            let den = Q / beta.pow(i) as u64;
+            let x_i = rem / den; // division between u64 already does floor
+            x.push(Self::from_u64(x_i));
+            if x_i != 0 {
+                rem = rem % den;
+            }
+        }
+        x
+    }
 }
 
 impl<const Q: u64> Zq<Q> {
@@ -243,6 +265,7 @@ impl<const Q: u64> fmt::Debug for Zq<Q> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::distributions::Uniform;
 
     #[test]
     fn exp() {
@@ -261,5 +284,63 @@ mod tests {
         let a = Zq::<Q>::from_f64(101.0);
         let b = Zq::<Q>::from_f64(-1.0);
         assert_eq!(-a, a * b);
+    }
+
+    fn recompose<const Q: u64>(beta: u32, l: u32, d: Vec<Zq<Q>>) -> Zq<Q> {
+        let mut x = 0u64;
+        for i in 0..l {
+            x += d[i as usize].0 * Q / beta.pow(i + 1) as u64;
+        }
+        Zq::from_u64(x)
+    }
+
+    #[test]
+    fn test_decompose() {
+        const Q1: u64 = 16;
+        let beta: u32 = 2;
+        let l: u32 = 4;
+        let x = Zq::<Q1>::from_u64(9);
+        let d = x.decompose(beta, l);
+
+        assert_eq!(recompose::<Q1>(beta, l, d), x);
+
+        const Q: u64 = 5u64.pow(3);
+        let beta: u32 = 5;
+        let l: u32 = 3;
+
+        let dist = Uniform::new(0_u64, Q);
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..1000 {
+            let x = Zq::<Q>::from_u64(dist.sample(&mut rng));
+
+            let d = x.decompose(beta, l);
+
+            assert_eq!(recompose::<Q>(beta, l, d), x);
+        }
+    }
+
+    #[test]
+    fn test_decompose_approx() {
+        const Q: u64 = 2u64.pow(4) + 1;
+        let beta: u32 = 2;
+        let l: u32 = 4;
+        let x = Zq::<Q>::from_u64(16); // in q, but bigger than beta^l
+        let d = x.decompose(beta, l);
+        assert_eq!(recompose::<Q>(beta, l, d), Zq(15));
+
+        const Q2: u64 = 5u64.pow(3) + 1;
+        let beta: u32 = 5;
+        let l: u32 = 3;
+        let x = Zq::<Q2>::from_u64(125); // in q, but bigger than beta^l
+        let d = x.decompose(beta, l);
+        assert_eq!(recompose::<Q2>(beta, l, d), Zq(124));
+
+        const Q3: u64 = 2u64.pow(16) + 1;
+        let beta: u32 = 2;
+        let l: u32 = 16;
+        let x = Zq::<Q3>::from_u64(Q3 - 1); // in q, but bigger than beta^l
+        let d = x.decompose(beta, l);
+        assert_eq!(recompose::<Q3>(beta, l, d), Zq(beta.pow(l) as u64 - 1));
     }
 }
