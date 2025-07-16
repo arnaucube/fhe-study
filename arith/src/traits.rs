@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-/// represents a ring element
+/// Represents a ring element. Currently implemented by ring.rs#R and ringq.rs#Rq.
 pub trait Ring:
     Sized
     + Add<Output = Self>
@@ -25,6 +25,6 @@ pub trait Ring:
 
     fn coeffs(&self) -> Vec<Self::C>;
     fn zero() -> Self;
-    fn rand(rng: impl Rng, dist: impl Distribution<f64>) -> Self;
     // note/wip/warning: dist (0,q) with f64, will output more '0=q' elements than other values
+    fn rand(rng: impl Rng, dist: impl Distribution<f64>) -> Self;
 }

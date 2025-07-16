@@ -69,13 +69,21 @@ impl<const Q: u64, const N: usize, const K: usize> GLWE<Q, N, K> {
     pub fn decrypt<const T: u64>(&self, sk: &SecretKey<Q, N, K>, delta: u64) -> Rq<T, N> {
         let (d, b): (TR<Rq<Q, N>, K>, Rq<Q, N>) = (self.0.clone(), self.1);
         let r: Rq<Q, N> = b - &d * &sk.0;
-        let r_scaled: Vec<f64> = r
-            .coeffs()
-            .iter()
-            .map(|e| (e.0 as f64 / delta as f64).round())
-            .collect();
-        let r = Rq::<Q, N>::from_vec_f64(r_scaled);
+        let r = r.mul_div_round(T, Q);
+        // let r_scaled: Vec<f64> = r
+        //     .coeffs()
+        //     .iter()
+        //     // .map(|e| (e.0 as f64 / delta as f64).round())
+        //     .map(|e| e.mul_div_round(T, Q))
+        //     .collect();
+        // let r = Rq::<Q, N>::from_vec_f64(r_scaled);
         r.remodule::<T>()
+    }
+
+    pub fn mod_switch<const P: u64>(&self) -> GLWE<P, N, K> {
+        let a: TR<Rq<P, N>, K> = TR(self.0 .0.iter().map(|r| r.mod_switch::<P>()).collect());
+        let b: Rq<P, N> = self.1.mod_switch::<P>();
+        GLWE(a, b)
     }
 }
 
@@ -229,6 +237,45 @@ mod tests {
 
             let m3_recovered: Rq<T, N> = c3.decrypt(&sk, delta);
             assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m3_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mod_switch() -> Result<()> {
+        const Q: u64 = 2u64.pow(16) + 1;
+        const P: u64 = 2u64.pow(8) + 1;
+        // note: wip, Q and P chosen so that P/Q is an integer
+        const N: usize = 8;
+        const T: u64 = 8; // plaintext modulus, must be a prime or power of a prime
+        const K: usize = 16;
+        type S = GLWE<Q, N, K>;
+
+        let delta: u64 = Q / T; // floored
+        let mut rng = rand::thread_rng();
+
+        dbg!(P as f64 / Q as f64);
+        dbg!(delta);
+        dbg!(delta as f64 * P as f64 / Q as f64);
+        dbg!(delta as f64 * (P as f64 / Q as f64));
+
+        for _ in 0..200 {
+            let (sk, pk) = S::new_key(&mut rng)?;
+
+            let msg_dist = Uniform::new(0_u64, T);
+            let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+
+            let c = S::encrypt(&mut rng, &pk, &m, delta)?;
+
+            let c2 = c.mod_switch::<P>();
+            let sk2: SecretKey<P, N, K> =
+                SecretKey(TR(sk.0 .0.iter().map(|s_i| s_i.remodule::<P>()).collect()));
+            let delta2: u64 = ((P as f64 * delta as f64) / Q as f64).round() as u64;
+
+            let m_recovered = c2.decrypt(&sk2, delta2);
+
+            assert_eq!(m, m_recovered);
         }
 
         Ok(())

@@ -49,9 +49,6 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
     }
 }
 
-// TODO define a trait "PolynomialRingTrait" or similar, so that when other structs use it can just
-// use the trait and not need to add '<Q, N>' to their params
-
 impl<const Q: u64, const N: usize> From<crate::ring::R<N>> for Rq<Q, N> {
     fn from(r: crate::ring::R<N>) -> Self {
         Self::from_vec(
@@ -165,7 +162,7 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     }
 
     /// perform the mod switch operation from Q to Q', where Q2=Q'
-    fn mod_switch<const Q2: u64>(&self) -> Rq<Q2, N> {
+    pub fn mod_switch<const Q2: u64>(&self) -> Rq<Q2, N> {
         Rq::<Q2, N> {
             coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<Q2>()),
             evals: None,
