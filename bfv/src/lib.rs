@@ -52,7 +52,7 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         // tensor (\in R) (2021-204 p.9)
         // NOTE: here can use *, but at first versions want to make it explicit
         // that we're using the naive mul. TODO use *.
-        use arith::ring::naive_mul;
+        use arith::ring_n::naive_mul;
         let c0: Vec<i64> = naive_mul(&a0, &b0);
         let c1_l: Vec<i64> = naive_mul(&a0, &b1);
         let c1_r = naive_mul(&a1, &b0);
@@ -60,9 +60,9 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         let c2: Vec<i64> = naive_mul(&a1, &b1);
 
         // scale down, then reduce module Q, so result is \in R_q
-        let c0: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c0, T, Q);
-        let c1: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c1, T, Q);
-        let c2: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2, T, Q);
+        let c0: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c0, T, Q);
+        let c1: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c1, T, Q);
+        let c2: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2, T, Q);
 
         (c0, c1, c2)
     }
@@ -72,9 +72,9 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         BFV::<Q, N, T>::relinearize_204::<PQ>(&rlk, &c0, &c1, &c2)
     }
 }
-// naive mul in the ring Rq, reusing the ring::naive_mul and then applying mod(X^N +1)
+// naive mul in the ring Rq, reusing the ring_n::naive_mul and then applying mod(X^N +1)
 fn tmp_naive_mul<const Q: u64, const N: usize>(a: Rq<Q, N>, b: Rq<Q, N>) -> Rq<Q, N> {
-    Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(&a.to_r(), &b.to_r()))
+    Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(&a.to_r(), &b.to_r()))
 }
 
 impl<const Q: u64, const N: usize> ops::Add<RLWE<Q, N>> for RLWE<Q, N> {
@@ -139,7 +139,7 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         let cs = c.0 + c.1 * sk.0; // done in mod q
 
         // same but with naive_mul:
-        // let c1s = arith::ring::naive_mul(&c.1.to_r(), &sk.0.to_r());
+        // let c1s = arith::ring_n::naive_mul(&c.1.to_r(), &sk.0.to_r());
         // let c1s = Rq::<Q, N>::from_vec_i64(c1s);
         // let cs = c.0 + c1s;
 
@@ -219,11 +219,11 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         // let r0: Rq<Q, N> = c2rlk0.mul_div_round(1, P).remodule::<Q>();
         // let r1: Rq<Q, N> = c2rlk1.mul_div_round(1, P).remodule::<Q>();
 
-        use arith::ring::naive_mul;
+        use arith::ring_n::naive_mul;
         let c2rlk0: Vec<i64> = naive_mul(&c2.to_r(), &rlk.0.to_r());
         let c2rlk1: Vec<i64> = naive_mul(&c2.to_r(), &rlk.1.to_r());
-        let r0: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2rlk0, 1, P);
-        let r1: Rq<Q, N> = arith::ring::mul_div_round::<Q, N>(c2rlk1, 1, P);
+        let r0: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2rlk0, 1, P);
+        let r1: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2rlk1, 1, P);
 
         let res = RLWE::<Q, N>(c0 + &r0, c1 + &r1);
         res
@@ -294,7 +294,7 @@ mod tests {
     fn test_constant_add_mul() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
         const N: usize = 16;
-        const T: u64 = 16; // plaintext modulus
+        const T: u64 = 8; // plaintext modulus
         type S = BFV<Q, N, T>;
 
         let mut rng = rand::thread_rng();
@@ -488,10 +488,10 @@ mod tests {
         // decrypt non-relinearized mul result
         let m3: Rq<Q, N> = c_a + c_b * sk.0 + c_c * sk.0 * sk.0;
         // let m3: Rq<Q, N> = c_a
-        //     + Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(&c_b.to_r(), &sk.0.to_r()))
-        //     + Rq::<Q, N>::from_vec_i64(arith::ring::naive_mul(
+        //     + Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(&c_b.to_r(), &sk.0.to_r()))
+        //     + Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(
         //         &c_c.to_r(),
-        //         &R::<N>::from_vec(arith::ring::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
+        //         &R::<N>::from_vec(arith::ring_n::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
         //     ));
         let m3: Rq<Q, N> = m3.mul_div_round(T, Q); // descale
         let m3 = m3.remodule::<T>();

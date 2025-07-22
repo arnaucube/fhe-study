@@ -1,7 +1,6 @@
-use anyhow::{anyhow, Result};
 use rand::{distributions::Distribution, Rng};
 use std::fmt;
-use std::ops;
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 /// Z_q, integers modulus q, not necessarily prime
 #[derive(Clone, Copy, PartialEq)]
@@ -59,7 +58,7 @@ impl<const Q: u64> Zq<Q> {
         }
     }
     pub fn zero() -> Self {
-        Zq(0u64)
+        Self(0u64)
     }
     pub fn square(self) -> Self {
         self * self
@@ -131,8 +130,14 @@ impl<const Q: u64> Zq<Q> {
         Zq::<Q2>::from_u64(((self.0 as f64 * Q2 as f64) / Q as f64).round() as u64)
     }
 
-    // TODO more efficient method for when decomposing with base 2 (beta=2)
     pub fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
+        if beta == 2 {
+            self.decompose_base2(l)
+        } else {
+            self.decompose_base_beta(beta, l)
+        }
+    }
+    pub fn decompose_base_beta(&self, beta: u32, l: u32) -> Vec<Self> {
         let mut rem: u64 = self.0;
         // next if is for cases in which beta does not divide Q (concretely
         // beta^l!=Q). round to the nearest multiple of q/beta^l
@@ -152,6 +157,41 @@ impl<const Q: u64> Zq<Q> {
         }
         x
     }
+    /// decompose when beta=2
+    pub fn decompose_base2(&self, l: u32) -> Vec<Self> {
+        // next if is for cases in which beta does not divide Q (concretely
+        // beta^l!=Q). round to the nearest multiple of q/beta^l
+        if self.0 >= 1 << l as u64 {
+            // rem = Q - 1 - (Q / beta as u64); // floor
+            // (where beta=2)
+            return vec![Zq(1); l as usize];
+        }
+
+        (0..l)
+            .rev()
+            .map(|i| Self(((self.0 >> i) & 1) as u64))
+            .collect()
+
+        // naive ver:
+        // let mut rem: u64 = self.0;
+        // // next if is for cases in which beta does not divide Q (concretely
+        // // beta^l!=Q). round to the nearest multiple of q/beta^l
+        // if rem >= 1 << l as u64 {
+        //     // rem = Q - 1 - (Q / beta as u64); // floor
+        //     return vec![Zq(1); l as usize];
+        // }
+        //
+        // let mut x: Vec<Self> = vec![];
+        // for i in 1..l + 1 {
+        //     let den = Q / (1 << i as u64);
+        //     let x_i = rem / den; // division between u64 already does floor
+        //     x.push(Self::from_u64(x_i));
+        //     if x_i != 0 {
+        //         rem = rem % den;
+        //     }
+        // }
+        // x
+    }
 }
 
 impl<const Q: u64> Zq<Q> {
@@ -163,7 +203,7 @@ impl<const Q: u64> Zq<Q> {
     }
 }
 
-impl<const Q: u64> ops::Add<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> Add<Zq<Q>> for Zq<Q> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -174,7 +214,7 @@ impl<const Q: u64> ops::Add<Zq<Q>> for Zq<Q> {
         Zq(r)
     }
 }
-impl<const Q: u64> ops::Add<&Zq<Q>> for &Zq<Q> {
+impl<const Q: u64> Add<&Zq<Q>> for &Zq<Q> {
     type Output = Zq<Q>;
 
     fn add(self, rhs: &Zq<Q>) -> Self::Output {
@@ -185,7 +225,7 @@ impl<const Q: u64> ops::Add<&Zq<Q>> for &Zq<Q> {
         Zq(r)
     }
 }
-impl<const Q: u64> ops::AddAssign<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> AddAssign<Zq<Q>> for Zq<Q> {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs
     }
@@ -198,7 +238,7 @@ impl<const Q: u64> std::iter::Sum for Zq<Q> {
         iter.fold(Zq(0), |acc, x| acc + x)
     }
 }
-impl<const Q: u64> ops::Sub<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> Sub<Zq<Q>> for Zq<Q> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Zq<Q> {
@@ -209,7 +249,7 @@ impl<const Q: u64> ops::Sub<Zq<Q>> for Zq<Q> {
         }
     }
 }
-impl<const Q: u64> ops::Sub<&Zq<Q>> for &Zq<Q> {
+impl<const Q: u64> Sub<&Zq<Q>> for &Zq<Q> {
     type Output = Zq<Q>;
 
     fn sub(self, rhs: &Zq<Q>) -> Self::Output {
@@ -220,19 +260,19 @@ impl<const Q: u64> ops::Sub<&Zq<Q>> for &Zq<Q> {
         }
     }
 }
-impl<const Q: u64> ops::SubAssign<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> SubAssign<Zq<Q>> for Zq<Q> {
     fn sub_assign(&mut self, rhs: Self) {
         *self = *self - rhs
     }
 }
-impl<const Q: u64> ops::Neg for Zq<Q> {
+impl<const Q: u64> Neg for Zq<Q> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
         Zq(Q - self.0)
     }
 }
-impl<const Q: u64> ops::Mul<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> Mul<Zq<Q>> for Zq<Q> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Zq<Q> {
@@ -241,7 +281,7 @@ impl<const Q: u64> ops::Mul<Zq<Q>> for Zq<Q> {
         // Zq((self.0 * rhs.0) % Q)
     }
 }
-impl<const Q: u64> ops::Div<Zq<Q>> for Zq<Q> {
+impl<const Q: u64> Div<Zq<Q>> for Zq<Q> {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Zq<Q> {
@@ -313,9 +353,8 @@ mod tests {
 
         for _ in 0..1000 {
             let x = Zq::<Q>::from_u64(dist.sample(&mut rng));
-
             let d = x.decompose(beta, l);
-
+            assert_eq!(d.len(), l as usize);
             assert_eq!(recompose::<Q>(beta, l, d), x);
         }
     }
@@ -327,6 +366,7 @@ mod tests {
         let l: u32 = 4;
         let x = Zq::<Q>::from_u64(16); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
+        assert_eq!(d.len(), l as usize);
         assert_eq!(recompose::<Q>(beta, l, d), Zq(15));
 
         const Q2: u64 = 5u64.pow(3) + 1;
@@ -334,6 +374,7 @@ mod tests {
         let l: u32 = 3;
         let x = Zq::<Q2>::from_u64(125); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
+        assert_eq!(d.len(), l as usize);
         assert_eq!(recompose::<Q2>(beta, l, d), Zq(124));
 
         const Q3: u64 = 2u64.pow(16) + 1;
@@ -341,6 +382,7 @@ mod tests {
         let l: u32 = 16;
         let x = Zq::<Q3>::from_u64(Q3 - 1); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
+        assert_eq!(d.len(), l as usize);
         assert_eq!(recompose::<Q3>(beta, l, d), Zq(beta.pow(l) as u64 - 1));
     }
 }

@@ -106,8 +106,8 @@ mod tests {
     use super::*;
     use rand_distr::Uniform;
 
-    use crate::ringq::matrix_vec_product;
-    use crate::ringq::Rq;
+    use crate::ring_nq::matrix_vec_product;
+    use crate::ring_nq::Rq;
 
     #[test]
     fn roots_of_unity() -> Result<()> {

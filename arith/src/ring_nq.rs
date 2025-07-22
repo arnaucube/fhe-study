@@ -1,6 +1,7 @@
 //! Polynomial ring Z_q[X]/(X^N+1)
 //!
 
+use anyhow::{anyhow, Result};
 use rand::{distributions::Distribution, Rng};
 use std::array;
 use std::fmt;
@@ -9,7 +10,6 @@ use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::ntt::NTT;
 use crate::zq::{modulus_u64, Zq};
-use anyhow::{anyhow, Result};
 
 use crate::Ring;
 
@@ -29,6 +29,7 @@ pub struct Rq<const Q: u64, const N: usize> {
 
 impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
     type C = Zq<Q>;
+
     fn coeffs(&self) -> Vec<Self::C> {
         self.coeffs.to_vec()
     }
@@ -48,6 +49,16 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
         }
     }
 
+    fn from_vec(coeffs: Vec<Zq<Q>>) -> Self {
+        let mut p = coeffs;
+        modulus::<Q, N>(&mut p);
+        let coeffs = array::from_fn(|i| p[i]);
+        Self {
+            coeffs,
+            evals: None,
+        }
+    }
+
     // returns the decomposition of each polynomial coefficient, such
     // decomposition will be a vecotor of length N, containint N vectors of Zq
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
@@ -61,8 +72,8 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
     }
 }
 
-impl<const Q: u64, const N: usize> From<crate::ring::R<N>> for Rq<Q, N> {
-    fn from(r: crate::ring::R<N>) -> Self {
+impl<const Q: u64, const N: usize> From<crate::ring_n::R<N>> for Rq<Q, N> {
+    fn from(r: crate::ring_n::R<N>) -> Self {
         Self::from_vec(
             r.coeffs()
                 .iter()
@@ -104,15 +115,6 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     //         evals: None,
     //     }
     // }
-    pub fn from_vec(coeffs: Vec<Zq<Q>>) -> Self {
-        let mut p = coeffs;
-        modulus::<Q, N>(&mut p);
-        let coeffs = array::from_fn(|i| p[i]);
-        Self {
-            coeffs,
-            evals: None,
-        }
-    }
     // this method is mostly for tests
     pub fn from_vec_u64(coeffs: Vec<u64>) -> Self {
         let coeffs_mod_q = coeffs.iter().map(|c| Zq::from_u64(*c)).collect();
@@ -286,7 +288,7 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
             .map(|x| if x.0 > (Q / 2) { Q - x.0 } else { x.0 })
             .fold(0, |a, b| a.max(b))
     }
-    pub fn mod_centered_q(&self) -> crate::ring::R<N> {
+    pub fn mod_centered_q(&self) -> crate::ring_n::R<N> {
         self.to_r().mod_centered_q::<Q>()
     }
 }
@@ -535,7 +537,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn poly_ring() {
+    fn test_polynomial_ring() {
         // the test values used are generated with SageMath
         const Q: u64 = 7;
         const N: usize = 3;
@@ -623,14 +625,14 @@ mod tests {
         let d = a.decompose(beta, l);
 
         assert_eq!(
-            d[0],
+            d[0].coeffs().to_vec(),
             vec![1u64, 3, 0, 1]
                 .iter()
                 .map(|e| Zq::<Q>::from_u64(*e))
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            d[1],
+            d[1].coeffs().to_vec(),
             vec![3u64, 2, 3, 2]
                 .iter()
                 .map(|e| Zq::<Q>::from_u64(*e))

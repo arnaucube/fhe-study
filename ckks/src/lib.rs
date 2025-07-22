@@ -157,7 +157,7 @@ mod tests {
     fn test_encode_encrypt_decrypt_decode() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
         const N: usize = 16;
-        const T: u64 = 16;
+        const T: u64 = 8;
         let scale_factor = C::<f64>::new(512.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
@@ -202,7 +202,7 @@ mod tests {
     fn test_add() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
         const N: usize = 16;
-        const T: u64 = 10;
+        const T: u64 = 8;
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
@@ -245,7 +245,7 @@ mod tests {
     fn test_sub() -> Result<()> {
         const Q: u64 = 2u64.pow(16) + 1;
         const N: usize = 16;
-        const T: u64 = 10;
+        const T: u64 = 8;
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
