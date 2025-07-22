@@ -43,6 +43,19 @@ impl<const N: usize> Ring for R<N> {
         unimplemented!();
         // array::from_fn(|i| self.coeffs[i].decompose(beta, l))
     }
+
+    // performs the multiplication and division over f64, and then it rounds the
+    // result, only applying the mod Q at the end
+    fn mul_div_round(&self, num: u64, den: u64) -> Self {
+        unimplemented!()
+        // fn mul_div_round<const Q: u64>(&self, num: u64, den: u64) -> crate::Rq<Q, N> {
+        //     let r: Vec<f64> = self
+        //         .coeffs()
+        //         .iter()
+        //         .map(|e| ((num as f64 * *e as f64) / den as f64).round())
+        //         .collect();
+        //     crate::Rq::<Q, N>::from_vec_f64(r)
+    }
 }
 
 impl<const Q: u64, const N: usize> From<crate::ring_nq::Rq<Q, N>> for R<N> {
@@ -73,16 +86,6 @@ impl<const N: usize> R<N> {
     }
     pub fn mul_by_i64(&self, s: i64) -> Self {
         Self(array::from_fn(|i| self.0[i] * s))
-    }
-    // performs the multiplication and division over f64, and then it rounds the
-    // result, only applying the mod Q at the end
-    pub fn mul_div_round<const Q: u64>(&self, num: u64, den: u64) -> crate::Rq<Q, N> {
-        let r: Vec<f64> = self
-            .coeffs()
-            .iter()
-            .map(|e| ((num as f64 * *e as f64) / den as f64).round())
-            .collect();
-        crate::Rq::<Q, N>::from_vec_f64(r)
     }
 
     pub fn infinity_norm(&self) -> u64 {

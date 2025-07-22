@@ -30,4 +30,10 @@ pub trait Ring:
     fn from_vec(coeffs: Vec<Self::C>) -> Self;
 
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self>;
+
+    /// returns [ [(num/den) * self].round() ] mod q
+    /// ie. performs the multiplication and division over f64, and then it
+    /// rounds the result, only applying the mod Q (if the ring is mod Q) at the
+    /// end.
+    fn mul_div_round(&self, num: u64, den: u64) -> Self;
 }

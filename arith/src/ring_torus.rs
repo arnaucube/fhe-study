@@ -49,6 +49,18 @@ impl<const N: usize> Ring for Tn<N> {
         // convert it to Tn<N>
         r.iter().map(|a_i| Self::from_vec(a_i.clone())).collect()
     }
+
+    /// returns [ [(num/den) * self].round() ] mod q
+    /// ie. performs the multiplication and division over f64, and then it rounds the
+    /// result, only applying the mod Q at the end
+    fn mul_div_round(&self, num: u64, den: u64) -> Self {
+        let r: Vec<T64> = self
+            .coeffs()
+            .iter()
+            .map(|e| T64(((num as f64 * e.0 as f64) / den as f64).round() as u64))
+            .collect();
+        Self::from_vec(r)
+    }
 }
 
 // apply mod (X^N+1)

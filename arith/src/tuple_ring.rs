@@ -1,12 +1,15 @@
 //! This file implements the struct for an Tuple of Ring Rq elements and its
-//! operations.
+//! operations, which are performed element-wise.
 
 use anyhow::Result;
 use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
 use rand_distr::{Normal, Uniform};
 use std::iter::Sum;
-use std::{array, ops};
+use std::{
+    array,
+    ops::{Add, Mul, Sub},
+};
 
 use crate::Ring;
 
@@ -34,7 +37,7 @@ impl<R: Ring, const K: usize> TR<R, K> {
     }
 }
 
-impl<R: Ring, const K: usize> ops::Add<TR<R, K>> for TR<R, K> {
+impl<R: Ring, const K: usize> Add<TR<R, K>> for TR<R, K> {
     type Output = Self;
     fn add(self, other: Self) -> Self {
         Self(
@@ -45,7 +48,7 @@ impl<R: Ring, const K: usize> ops::Add<TR<R, K>> for TR<R, K> {
     }
 }
 
-impl<R: Ring, const K: usize> ops::Sub<TR<R, K>> for TR<R, K> {
+impl<R: Ring, const K: usize> Sub<TR<R, K>> for TR<R, K> {
     type Output = Self;
     fn sub(self, other: Self) -> Self {
         Self(zip_eq(self.0, other.0).map(|(s, o)| s - o).collect())
@@ -54,13 +57,13 @@ impl<R: Ring, const K: usize> ops::Sub<TR<R, K>> for TR<R, K> {
 
 /// for (TR,TR), the Mul operation is defined as:
 /// for A, B \in R^k, result = Σ A_i * B_i \in R
-impl<R: Ring, const K: usize> ops::Mul<TR<R, K>> for TR<R, K> {
+impl<R: Ring, const K: usize> Mul<TR<R, K>> for TR<R, K> {
     type Output = R;
     fn mul(self, other: Self) -> R {
         zip_eq(self.0, other.0).map(|(s, o)| s * o).sum()
     }
 }
-impl<R: Ring, const K: usize> ops::Mul<&TR<R, K>> for &TR<R, K> {
+impl<R: Ring, const K: usize> Mul<&TR<R, K>> for &TR<R, K> {
     type Output = R;
     fn mul(self, other: &TR<R, K>) -> R {
         zip_eq(self.0.clone(), other.0.clone())
@@ -71,13 +74,13 @@ impl<R: Ring, const K: usize> ops::Mul<&TR<R, K>> for &TR<R, K> {
 
 /// for (TR, R), the Mul operation is defined as each element of TR is
 /// multiplied by R
-impl<R: Ring, const K: usize> ops::Mul<R> for TR<R, K> {
+impl<R: Ring, const K: usize> Mul<R> for TR<R, K> {
     type Output = TR<R, K>;
     fn mul(self, other: R) -> TR<R, K> {
         Self(self.0.iter().map(|s| s.clone() * other.clone()).collect())
     }
 }
-impl<R: Ring, const K: usize> ops::Mul<&R> for &TR<R, K> {
+impl<R: Ring, const K: usize> Mul<&R> for &TR<R, K> {
     type Output = TR<R, K>;
     fn mul(self, other: &R) -> TR<R, K> {
         TR::<R, K>(self.0.iter().map(|s| s.clone() * other.clone()).collect())

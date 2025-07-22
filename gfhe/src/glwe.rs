@@ -80,29 +80,30 @@ impl<const Q: u64, const N: usize, const K: usize> GLWE<Q, N, K> {
         r
     }
 
+    // scale up
+    pub fn encode<const T: u64>(m: &Rq<T, N>) -> Rq<Q, N> {
+        let m = m.remodule::<Q>();
+        let delta = Q / T; // floored
+        m * delta
+    }
+    // scale down
+    pub fn decode<const T: u64>(p: &Rq<Q, N>) -> Rq<T, N> {
+        let r = p.mul_div_round(T, Q);
+        r.remodule::<T>()
+    }
+
     // encrypts with the given SecretKey (instead of PublicKey)
-    pub fn encrypt_s(
-        mut rng: impl Rng,
-        sk: &SecretKey<Q, N, K>,
-        m: &Rq<Q, N>,
-        // TODO delta not as input
-        delta: u64,
-    ) -> Result<Self> {
+    pub fn encrypt_s(mut rng: impl Rng, sk: &SecretKey<Q, N, K>, m: &Rq<Q, N>) -> Result<Self> {
         let Xi_key = Uniform::new(0_f64, 2_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         let a: TR<Rq<Q, N>, K> = TR::rand(&mut rng, Xi_key);
         let e = Rq::<Q, N>::rand(&mut rng, Xi_err);
 
-        let b: Rq<Q, N> = (&a * &sk.0) + *m * delta + e;
+        let b: Rq<Q, N> = (&a * &sk.0) + *m + e;
         Ok(Self(a, b))
     }
-    pub fn encrypt(
-        mut rng: impl Rng,
-        pk: &PublicKey<Q, N, K>,
-        m: &Rq<Q, N>,
-        delta: u64,
-    ) -> Result<Self> {
+    pub fn encrypt(mut rng: impl Rng, pk: &PublicKey<Q, N, K>, m: &Rq<Q, N>) -> Result<Self> {
         let Xi_key = Uniform::new(0_f64, 2_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
@@ -111,15 +112,14 @@ impl<const Q: u64, const N: usize, const K: usize> GLWE<Q, N, K> {
         let e0 = Rq::<Q, N>::rand(&mut rng, Xi_err);
         let e1 = TR::<Rq<Q, N>, K>::rand(&mut rng, Xi_err);
 
-        let b: Rq<Q, N> = pk.0 * u + *m * delta + e0;
+        let b: Rq<Q, N> = pk.0 * u + *m + e0;
         let d: TR<Rq<Q, N>, K> = &pk.1 * &u + e1;
 
         Ok(Self(d, b))
     }
-    pub fn decrypt<const T: u64>(&self, sk: &SecretKey<Q, N, K>, delta: u64) -> Rq<Q, N> {
+    pub fn decrypt(&self, sk: &SecretKey<Q, N, K>) -> Rq<Q, N> {
         let (d, b): (TR<Rq<Q, N>, K>, Rq<Q, N>) = (self.0.clone(), self.1);
         let r: Rq<Q, N> = b - &d * &sk.0;
-        let r = r.mul_div_round(T, Q);
         r
     }
 
@@ -215,7 +215,6 @@ mod tests {
         const K: usize = 16;
         type S = GLWE<Q, N, K>;
 
-        let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         for _ in 0..200 {
@@ -223,16 +222,18 @@ mod tests {
 
             let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m: Rq<Q, N> = m.remodule::<Q>();
+            let p = S::encode::<T>(&m); // plaintext
 
-            let c = S::encrypt(&mut rng, &pk, &m, delta)?;
-            let m_recovered = c.decrypt::<T>(&sk, delta);
+            let c = S::encrypt(&mut rng, &pk, &p)?;
+            let p_recovered = c.decrypt(&sk);
+            let m_recovered = S::decode::<T>(&p_recovered);
 
             assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
 
             // same but using encrypt_s (with sk instead of pk))
-            let c = S::encrypt_s(&mut rng, &sk, &m, delta)?;
-            let m_recovered = c.decrypt::<T>(&sk, delta);
+            let c = S::encrypt_s(&mut rng, &sk, &p)?;
+            let p_recovered = c.decrypt(&sk);
+            let m_recovered = S::decode::<T>(&p_recovered);
 
             assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
         }
@@ -248,7 +249,6 @@ mod tests {
         const K: usize = 16;
         type S = GLWE<Q, N, K>;
 
-        let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         for _ in 0..200 {
@@ -257,15 +257,16 @@ mod tests {
             let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m1: Rq<Q, N> = m1.remodule::<Q>();
-            let m2: Rq<Q, N> = m2.remodule::<Q>();
+            let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
+            let p2: Rq<Q, N> = S::encode::<T>(&m2); // plaintext
 
-            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
-            let c2 = S::encrypt(&mut rng, &pk, &m2, delta)?;
+            let c1 = S::encrypt(&mut rng, &pk, &p1)?;
+            let c2 = S::encrypt(&mut rng, &pk, &p2)?;
 
             let c3 = c1 + c2;
 
-            let m3_recovered = c3.decrypt::<T>(&sk, delta);
+            let p3_recovered = c3.decrypt(&sk);
+            let m3_recovered = S::decode::<T>(&p3_recovered);
 
             assert_eq!((m1 + m2).remodule::<T>(), m3_recovered.remodule::<T>());
         }
@@ -281,7 +282,6 @@ mod tests {
         const K: usize = 16;
         type S = GLWE<Q, N, K>;
 
-        let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         for _ in 0..200 {
@@ -290,17 +290,17 @@ mod tests {
             let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m1: Rq<Q, N> = m1.remodule::<Q>();
-            let m2: Rq<Q, N> = m2.remodule::<Q>();
-            let m2_scaled: Rq<Q, N> = m2 * delta;
+            let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
+            let p2: Rq<Q, N> = S::encode::<T>(&m2); // plaintext
 
-            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
+            let c1 = S::encrypt(&mut rng, &pk, &p1)?;
 
-            let c3 = c1 + m2_scaled;
+            let c3 = c1 + p2;
 
-            let m3_recovered = c3.decrypt::<T>(&sk, delta);
+            let p3_recovered = c3.decrypt(&sk);
+            let m3_recovered = S::decode::<T>(&p3_recovered);
 
-            assert_eq!((m1 + m2).remodule::<T>(), m3_recovered.remodule::<T>());
+            assert_eq!((m1 + m2).remodule::<T>(), m3_recovered);
         }
 
         Ok(())
@@ -314,7 +314,6 @@ mod tests {
         const K: usize = 16;
         type S = GLWE<Q, N, K>;
 
-        let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         for _ in 0..200 {
@@ -323,14 +322,15 @@ mod tests {
             let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m1: Rq<Q, N> = m1.remodule::<Q>();
-            let m2: Rq<Q, N> = m2.remodule::<Q>();
-            let c1 = S::encrypt(&mut rng, &pk, &m1, delta)?;
+            let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
+            let p2: Rq<Q, N> = m2.remodule::<Q>();
 
-            let c3 = c1 * m2;
+            let c1 = S::encrypt(&mut rng, &pk, &p1)?;
 
-            let m3_recovered: Rq<Q, N> = c3.decrypt::<T>(&sk, delta);
-            let m3_recovered: Rq<T, N> = m3_recovered.remodule::<T>();
+            let c3 = c1 * p2;
+
+            let p3_recovered: Rq<Q, N> = c3.decrypt(&sk);
+            let m3_recovered = S::decode::<T>(&p3_recovered);
             assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m3_recovered);
         }
 
@@ -360,17 +360,18 @@ mod tests {
 
             let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m: Rq<Q, N> = m.remodule::<Q>();
+            let p = S::encode::<T>(&m); // plaintext
 
-            let c = S::encrypt(&mut rng, &pk, &m, delta)?;
+            let c = S::encrypt(&mut rng, &pk, &p)?;
             // let c = S::encrypt_s(&mut rng, &sk, &m, delta)?;
 
             let c2 = c.mod_switch::<P>();
             let sk2: SecretKey<P, N, K> =
                 SecretKey(TR(sk.0 .0.iter().map(|s_i| s_i.remodule::<P>()).collect()));
-            let delta2: u64 = ((P as f64 * delta as f64) / Q as f64).round() as u64;
+            // let delta2: u64 = ((P as f64 * delta as f64) / Q as f64).round() as u64;
 
-            let m_recovered = c2.decrypt::<T>(&sk2, delta2);
+            let p_recovered = c2.decrypt(&sk2);
+            let m_recovered = GLWE::<P, N, K>::decode::<T>(&p_recovered);
 
             assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
         }
@@ -389,7 +390,6 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 16;
 
-        let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         let (sk, pk) = S::new_key(&mut rng)?;
@@ -399,21 +399,23 @@ mod tests {
 
         let msg_dist = Uniform::new(0_u64, T);
         let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-        let m: Rq<Q, N> = m.remodule::<Q>();
+        let p: Rq<Q, N> = S::encode::<T>(&m); // plaintext
 
-        let c = S::encrypt_s(&mut rng, &sk, &m, delta)?;
+        let c = S::encrypt_s(&mut rng, &sk, &p)?;
 
         let c2 = c.key_switch(beta, l, &ksk);
 
         // decrypt with the 2nd secret key
-        let m_recovered = c2.decrypt::<T>(&sk2, delta);
-        assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
+        let p_recovered = c2.decrypt(&sk2);
+        let m_recovered = S::decode::<T>(&p_recovered);
+        assert_eq!(m, m_recovered);
 
         // do the same but now encrypting with pk
-        // let c = S::encrypt(&mut rng, &pk, &m, delta)?;
+        // let c = S::encrypt(&mut rng, &pk, &p)?;
         // let c2 = c.key_switch(beta, l, &ksk);
-        // let m_recovered = c2.decrypt::<T>(&sk2, delta);
-        // assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
+        // let p_recovered = c2.decrypt(&sk2);
+        // let m_recovered = S::decode::<T>(&p_recovered);
+        // assert_eq!(m, m_recovered);
 
         Ok(())
     }

@@ -3,7 +3,8 @@ members = [
     "arith",
     "gfhe",
     "bfv",
-    "ckks"
+    "ckks",
+    "tfhe"
 ]
 
 resolver = "2"
