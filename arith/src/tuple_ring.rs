@@ -55,7 +55,7 @@ impl<R: Ring, const K: usize> Sub<TR<R, K>> for TR<R, K> {
     }
 }
 
-/// for (TR,TR), the Mul operation is defined as:
+/// for (TR,TR), the Mul operation is defined as the dot product:
 /// for A, B \in R^k, result = Σ A_i * B_i \in R
 impl<R: Ring, const K: usize> Mul<TR<R, K>> for TR<R, K> {
     type Output = R;

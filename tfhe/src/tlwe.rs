@@ -133,6 +133,15 @@ impl<const K: usize> Sub<Tn<1>> for TLWE<K> {
         Self(a, b)
     }
 }
+// plaintext multiplication
+impl<const K: usize> Mul<Tn<1>> for TLWE<K> {
+    type Output = Self;
+    fn mul(self, plaintext: Tn<1>) -> Self {
+        let a: TR<Tn<1>, K> = TR(self.0 .0.iter().map(|r_i| *r_i * plaintext).collect());
+        let b: Tn<1> = self.1 * plaintext;
+        Self(a, b)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -231,6 +240,36 @@ mod tests {
             let m3_recovered = S::decode::<T>(&p3_recovered);
 
             assert_eq!((m1 + m2).remodule::<T>(), m3_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mul_plaintext() -> Result<()> {
+        const T: u64 = 128;
+        const K: usize = 16;
+        type S = TLWE<K>;
+
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..200 {
+            let (sk, pk) = S::new_key(&mut rng)?;
+
+            let msg_dist = Uniform::new(0_u64, T);
+            let m1 = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+            let m2 = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+            let p1: Tn<1> = S::encode::<T>(&m1);
+            // don't scale up p2, set it directly from m2
+            let p2: Tn<1> = Tn(array::from_fn(|i| T64(m2.coeffs()[i].0)));
+
+            let c1 = S::encrypt(&mut rng, &pk, &p1)?;
+
+            let c3 = c1 * p2;
+
+            let p3_recovered: Tn<1> = c3.decrypt(&sk);
+            let m3_recovered = S::decode::<T>(&p3_recovered);
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m3_recovered);
         }
 
         Ok(())

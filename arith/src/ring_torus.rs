@@ -167,15 +167,6 @@ fn naive_poly_mul<const N: usize>(poly1: &Tn<N>, poly2: &Tn<N>) -> Tn<N> {
     // apply mod (X^N + 1))
     modulus_u128::<N>(&mut result);
 
-    // sanity check: check that there are no coeffs > i64_max
-    assert_eq!(
-        result,
-        Tn::<N>(array::from_fn(|i| T64(result[i] as u64)))
-            .coeffs()
-            .iter()
-            .map(|c| c.0 as u128)
-            .collect::<Vec<_>>()
-    );
     Tn(array::from_fn(|i| T64(result[i] as u64)))
 }
 fn modulus_u128<const N: usize>(p: &mut Vec<u128>) {

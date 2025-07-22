@@ -44,7 +44,7 @@ impl Add<T64> for T64 {
 }
 impl AddAssign for T64 {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
+        self.0 = self.0.wrapping_add(rhs.0)
     }
 }
 
@@ -57,7 +57,7 @@ impl Sub<T64> for T64 {
 }
 impl SubAssign for T64 {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
+        self.0 = self.0.wrapping_sub(rhs.0)
     }
 }
 
@@ -87,7 +87,7 @@ impl Mul<T64> for T64 {
 }
 impl MulAssign for T64 {
     fn mul_assign(&mut self, rhs: Self) {
-        self.0 *= rhs.0;
+        self.0 = self.0.wrapping_mul(rhs.0)
     }
 }
 
@@ -96,14 +96,14 @@ impl Mul<u64> for T64 {
     type Output = Self;
 
     fn mul(self, s: u64) -> Self {
-        Self(self.0 * s)
+        Self(self.0.wrapping_mul(s))
     }
 }
 impl Mul<&u64> for &T64 {
     type Output = T64;
 
     fn mul(self, s: &u64) -> Self::Output {
-        T64(self.0 * s)
+        T64(self.0.wrapping_mul(*s))
     }
 }
 

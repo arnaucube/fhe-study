@@ -8,3 +8,46 @@ Implementations from scratch done while studying some FHE papers; do not use in 
 - `tfhe`: https://eprint.iacr.org/2018/421.pdf scheme implementation
 
 `cargo test --release`
+
+
+## Example of usage
+> the repo is a work in progress, interfaces will change.
+
+This example shows usage of TFHE, but the idea is that the same interface would
+work for using CKKS & BFV, the only thing to be changed would be the parameters
+and the line `type S = TWLE<K>` to use `CKKS<Q, N>` or `BFV<Q, N, T>`.
+
+```rust
+const T: u64 = 128; // msg space (msg modulus)
+const K: usize = 16;
+type S = TLWE<K>;
+
+let mut rng = rand::thread_rng();
+let msg_dist = Uniform::new(0_u64, T);
+
+let (sk, pk) = S::new_key(&mut rng)?;
+
+// get two random msgs in Z_t
+let m1 = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+let m2 = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+let m3 = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+
+// encode the msgs into the plaintext space
+let p1: Tn<1> = S::encode::<T>(&m1); // plaintext
+let p2: Tn<1> = S::encode::<T>(&m2); // plaintext
+let c3_const: Tn<1> = Tn(array::from_fn(|i| T64(m3.coeffs()[i].0))); // encode it as constant value
+
+let c1 = S::encrypt(&mut rng, &pk, &p1)?;
+let c2 = S::encrypt(&mut rng, &pk, &p2)?;
+
+// now we can do encrypted operations (notice that we do them using simple
+// operations by operator overloading):
+let c3 = c1 + c2;
+let c4 = c2 * c3_const;
+
+// decrypt & decode
+let p4_recovered = c4.decrypt(&sk);
+let m4 = S::decode::<T>(&p4_recovered);
+
+// m4 is equal to (m1+m2)*m3
+```
