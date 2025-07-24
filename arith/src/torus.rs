@@ -33,6 +33,9 @@ impl T64 {
             .map(|i| T64(((self.0 >> i) & 1) as u64))
             .collect()
     }
+    pub fn mod_switch<const Q2: u64>(&self) -> T64 {
+        todo!()
+    }
 }
 
 impl Add<T64> for T64 {

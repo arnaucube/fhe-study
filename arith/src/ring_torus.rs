@@ -12,7 +12,7 @@ use std::array;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-use crate::{ring::Ring, torus::T64};
+use crate::{ring::Ring, torus::T64, Rq, Zq};
 
 /// 𝕋_<N,Q>[X] = 𝕋<Q>[X]/(X^N +1), polynomials modulo X^N+1 with coefficients in
 /// 𝕋, where Q=2^64.
@@ -21,6 +21,9 @@ pub struct Tn<const N: usize>(pub [T64; N]);
 
 impl<const N: usize> Ring for Tn<N> {
     type C = T64;
+
+    const Q: u64 = u64::MAX; // WIP
+    const N: usize = N;
 
     fn coeffs(&self) -> Vec<T64> {
         self.0.to_vec()
@@ -48,6 +51,22 @@ impl<const N: usize> Ring for Tn<N> {
             .collect();
         // convert it to Tn<N>
         r.iter().map(|a_i| Self::from_vec(a_i.clone())).collect()
+    }
+
+    fn remodule<const P: u64>(&self) -> Tn<N> {
+        todo!()
+        // Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
+    }
+
+    // fn mod_switch<const P: u64>(&self) -> impl Ring {
+    fn mod_switch<const P: u64>(&self) -> Rq<P, N> {
+        // unimplemented!()
+        // TODO WIP
+        let coeffs = array::from_fn(|i| Zq::<P>::from_u64(self.0[i].mod_switch::<P>().0));
+        Rq::<P, N> {
+            coeffs,
+            evals: None,
+        }
     }
 
     /// returns [ [(num/den) * self].round() ] mod q
@@ -174,12 +193,19 @@ fn modulus_u128<const N: usize>(p: &mut Vec<u128>) {
         return;
     }
     for i in N..p.len() {
-        p[i - N] = p[i - N].clone() - p[i].clone();
+        // p[i - N] = p[i - N].clone() - p[i].clone();
+        p[i - N] = p[i - N].wrapping_sub(p[i]);
         p[i] = 0;
     }
     p.truncate(N);
 }
 
+impl<const N: usize> Mul<T64> for Tn<N> {
+    type Output = Self;
+    fn mul(self, s: T64) -> Self {
+        Self(array::from_fn(|i| self.0[i] * s))
+    }
+}
 // mul by u64
 impl<const N: usize> Mul<u64> for Tn<N> {
     type Output = Self;

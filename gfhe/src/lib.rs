@@ -7,3 +7,6 @@
 
 pub mod glev;
 pub mod glwe;
+
+pub use glev::GLev;
+pub use glwe::GLWE;

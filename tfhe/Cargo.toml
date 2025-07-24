@@ -10,3 +10,4 @@ rand_distr = { workspace = true }
 itertools = { workspace = true }
 
 arith = { path="../arith" }
+gfhe = { path="../gfhe" }

@@ -30,6 +30,9 @@ pub struct Rq<const Q: u64, const N: usize> {
 impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
     type C = Zq<Q>;
 
+    const Q: u64 = Q;
+    const N: usize = N;
+
     fn coeffs(&self) -> Vec<Self::C> {
         self.coeffs.to_vec()
     }
@@ -71,9 +74,26 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
         r.iter().map(|a_i| Self::from_vec(a_i.clone())).collect()
     }
 
-    // returns [ [(num/den) * self].round() ] mod q
-    // ie. performs the multiplication and division over f64, and then it rounds the
-    // result, only applying the mod Q at the end
+    // Warning: this method will behave differently depending on the values P and Q:
+    // if Q<P, it just 'renames' the modulus parameter to P
+    // if Q>=P, it crops to mod P
+    fn remodule<const P: u64>(&self) -> Rq<P, N> {
+        Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
+    }
+
+    /// perform the mod switch operation from Q to Q', where Q2=Q'
+    // fn mod_switch<const P: u64, const M: usize>(&self) -> impl Ring {
+    fn mod_switch<const P: u64>(&self) -> Rq<P, N> {
+        // assert_eq!(N, M); // sanity check
+        Rq::<P, N> {
+            coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<P>()),
+            evals: None,
+        }
+    }
+
+    /// returns [ [(num/den) * self].round() ] mod q
+    /// ie. performs the multiplication and division over f64, and then it rounds the
+    /// result, only applying the mod Q at the end
     fn mul_div_round(&self, num: u64, den: u64) -> Self {
         let r: Vec<f64> = self
             .coeffs()
@@ -183,17 +203,9 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     // Warning: this method will behave differently depending on the values P and Q:
     // if Q<P, it just 'renames' the modulus parameter to P
     // if Q>=P, it crops to mod P
-    pub fn remodule<const P: u64>(&self) -> Rq<P, N> {
-        Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
-    }
-
-    /// perform the mod switch operation from Q to Q', where Q2=Q'
-    pub fn mod_switch<const Q2: u64>(&self) -> Rq<Q2, N> {
-        Rq::<Q2, N> {
-            coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<Q2>()),
-            evals: None,
-        }
-    }
+    // pub fn remodule<const P: u64>(&self) -> Rq<P, N> {
+    //     Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
+    // }
 
     // applies mod(T) to all coefficients of self
     pub fn coeffs_mod<const T: u64>(&self) -> Self {

@@ -15,9 +15,13 @@ use crate::Ring;
 #[derive(Clone, Copy)]
 pub struct R<const N: usize>(pub [i64; N]);
 
-impl<const N: usize> Ring for R<N> {
-    type C = i64;
-    fn coeffs(&self) -> Vec<Self::C> {
+// impl<const N: usize> Ring for R<N> {
+impl<const N: usize> R<N> {
+    // type C = i64;
+    // const Q: u64 = i64::MAX as u64; // WIP
+    // const N: usize = N;
+
+    pub fn coeffs(&self) -> Vec<i64> {
         self.0.to_vec()
     }
     fn zero() -> Self {
@@ -32,30 +36,39 @@ impl<const N: usize> Ring for R<N> {
         // Self(coeffs)
     }
 
-    fn from_vec(coeffs: Vec<Self::C>) -> Self {
+    pub fn from_vec(coeffs: Vec<i64>) -> Self {
         let mut p = coeffs;
         modulus::<N>(&mut p);
         Self(array::from_fn(|i| p[i]))
     }
 
+    /*
     // returns the decomposition of each polynomial coefficient
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
         unimplemented!();
         // array::from_fn(|i| self.coeffs[i].decompose(beta, l))
     }
 
-    // performs the multiplication and division over f64, and then it rounds the
-    // result, only applying the mod Q at the end
+    fn remodule<const P: u64>(&self) -> impl Ring {
+        unimplemented!()
+    }
+    fn mod_switch<const P: u64, const M: usize>(&self) -> R<N> {
+        unimplemented!()
+    }
+
+    /// performs the multiplication and division over f64, and then it rounds the
+    /// result, only applying the mod Q at the end
     fn mul_div_round(&self, num: u64, den: u64) -> Self {
         unimplemented!()
         // fn mul_div_round<const Q: u64>(&self, num: u64, den: u64) -> crate::Rq<Q, N> {
-        //     let r: Vec<f64> = self
-        //         .coeffs()
-        //         .iter()
-        //         .map(|e| ((num as f64 * *e as f64) / den as f64).round())
-        //         .collect();
-        //     crate::Rq::<Q, N>::from_vec_f64(r)
+        // let r: Vec<f64> = self
+        //     .coeffs()
+        //     .iter()
+        //     .map(|e| ((num as f64 * *e as f64) / den as f64).round())
+        //     .collect();
+        // crate::Rq::<Q, N>::from_vec_f64(r)
     }
+    */
 }
 
 impl<const Q: u64, const N: usize> From<crate::ring_nq::Rq<Q, N>> for R<N> {
@@ -65,9 +78,9 @@ impl<const Q: u64, const N: usize> From<crate::ring_nq::Rq<Q, N>> for R<N> {
 }
 
 impl<const N: usize> R<N> {
-    pub fn coeffs(&self) -> [i64; N] {
-        self.0
-    }
+    // pub fn coeffs(&self) -> [i64; N] {
+    //     self.0
+    // }
     pub fn to_rq<const Q: u64>(self) -> crate::Rq<Q, N> {
         crate::Rq::<Q, N>::from(self)
     }
@@ -318,6 +331,13 @@ pub fn mod_centered_q<const Q: u64, const N: usize>(p: Vec<i128>) -> R<N> {
     R::<N>::from_vec(r.iter().map(|v| *v as i64).collect::<Vec<i64>>())
 }
 
+impl<const N: usize> Mul<i64> for R<N> {
+    type Output = Self;
+
+    fn mul(self, s: i64) -> Self {
+        self.mul_by_i64(s)
+    }
+}
 // mul by u64
 impl<const N: usize> Mul<u64> for R<N> {
     type Output = Self;
