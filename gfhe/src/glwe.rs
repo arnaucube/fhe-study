@@ -17,12 +17,12 @@ const ERR_SIGMA: f64 = 3.2;
 /// GLWE implemented over the `Ring` trait, so that it can be also instantiated
 /// over the Torus polynomials 𝕋_<N,q>[X] = 𝕋_q[X]/ (X^N+1).
 #[derive(Clone, Debug)]
-pub struct GLWE<R: Ring, const K: usize>(TR<R, K>, R);
+pub struct GLWE<R: Ring, const K: usize>(pub TR<R, K>, pub R);
 
 #[derive(Clone, Debug)]
-pub struct SecretKey<R: Ring, const K: usize>(TR<R, K>);
+pub struct SecretKey<R: Ring, const K: usize>(pub TR<R, K>);
 #[derive(Clone, Debug)]
-pub struct PublicKey<R: Ring, const K: usize>(R, TR<R, K>);
+pub struct PublicKey<R: Ring, const K: usize>(pub R, pub TR<R, K>);
 
 // K GLevs, each KSK_i=l GLWEs
 #[derive(Clone, Debug)]
@@ -261,11 +261,11 @@ mod tests {
         type S = GLWE<Rq<Q, N>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?; // msg
                                                                // let m: Rq<Q, N> = m.remodule::<Q>();
 
@@ -306,11 +306,11 @@ mod tests {
         type S = GLWE<Tn<4>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_f64, T as f64);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_f64, T as f64);
             let m = Rq::<T, 4>::rand(&mut rng, msg_dist); // msg
 
             let p = t_encode::<T>(&m); // plaintext
@@ -340,11 +340,11 @@ mod tests {
         type S = GLWE<Rq<Q, N>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
@@ -373,11 +373,11 @@ mod tests {
         type S = GLWE<Rq<Q, N>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
@@ -405,11 +405,11 @@ mod tests {
         type S = GLWE<Rq<Q, N>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let p1: Rq<Q, N> = S::encode::<T>(&m1); // plaintext
@@ -438,11 +438,11 @@ mod tests {
         type S = GLWE<Rq<Q, N>, K>;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
 
             let p = S::encode::<T>(&m);

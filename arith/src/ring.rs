@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-/// Represents a ring element. Currently implemented by ring_n.rs#R and
-/// ring_nq.rs#Rq. Is not a 'pure algebraic ring', but more a custom trait
+/// Represents a ring element. Currently implemented by ring_nq.rs#Rq and
+/// ring_torus.rs#Tn. Is not a 'pure algebraic ring', but more a custom trait
 /// definition which includes methods like `mod_switch`.
 // assumed to be mod (X^N +1)
 pub trait Ring:
