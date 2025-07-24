@@ -3,7 +3,10 @@ use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-/// Represents a ring element. Currently implemented by ring_n.rs#R and ring_nq.rs#Rq.
+/// Represents a ring element. Currently implemented by ring_n.rs#R and
+/// ring_nq.rs#Rq. Is not a 'pure algebraic ring', but more a custom trait
+/// definition which includes methods like `mod_switch`.
+// assumed to be mod (X^N +1)
 pub trait Ring:
     Sized
     + Add<Output = Self>
@@ -11,16 +14,21 @@ pub trait Ring:
     + Sum
     + Sub<Output = Self>
     + SubAssign
-    + Mul<Output = Self>
-    + Mul<u64, Output = Self> // scalar mul
+    + Mul<Output = Self> // internal product
+    + Mul<u64, Output = Self> // scalar mul, external product
+    + Mul<Self::C, Output = Self>
     + PartialEq
     + Debug
     + Clone
+    + Copy
     + Sum<<Self as Add>::Output>
     + Sum<<Self as Mul>::Output>
 {
     /// C defines the coefficient type
     type C: Debug + Clone;
+
+    const Q: u64;
+    const N: usize;
 
     fn coeffs(&self) -> Vec<Self::C>;
     fn zero() -> Self;
@@ -30,6 +38,9 @@ pub trait Ring:
     fn from_vec(coeffs: Vec<Self::C>) -> Self;
 
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self>;
+
+    fn remodule<const P: u64>(&self) -> impl Ring;
+    fn mod_switch<const P: u64>(&self) -> impl Ring;
 
     /// returns [ [(num/den) * self].round() ] mod q
     /// ie. performs the multiplication and division over f64, and then it

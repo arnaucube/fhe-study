@@ -3,7 +3,7 @@ use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops::{Add, Mul};
 
-use arith::{Ring, Rq, TR};
+use arith::{Ring, TR};
 
 use crate::glwe::{PublicKey, SecretKey, GLWE};
 
@@ -11,25 +11,19 @@ const ERR_SIGMA: f64 = 3.2;
 
 // l GLWEs
 #[derive(Clone, Debug)]
-pub struct GLev<const Q: u64, const N: usize, const K: usize>(pub(crate) Vec<GLWE<Q, N, K>>);
+pub struct GLev<R: Ring, const K: usize>(pub(crate) Vec<GLWE<R, K>>);
 
-impl<const Q: u64, const N: usize, const K: usize> GLev<Q, N, K> {
-    pub fn encode<const T: u64>(m: &Rq<T, N>) -> Rq<Q, N> {
-        m.remodule::<Q>()
-    }
-    pub fn decode<const T: u64>(p: &Rq<Q, N>) -> Rq<T, N> {
-        p.remodule::<T>()
-    }
+impl<R: Ring, const K: usize> GLev<R, K> {
     pub fn encrypt(
         mut rng: impl Rng,
         beta: u32,
         l: u32,
-        pk: &PublicKey<Q, N, K>,
-        m: &Rq<Q, N>,
+        pk: &PublicKey<R, K>,
+        m: &R,
     ) -> Result<Self> {
-        let glev: Vec<GLWE<Q, N, K>> = (1..l + 1)
+        let glev: Vec<GLWE<R, K>> = (0..l)
             .map(|i| {
-                GLWE::<Q, N, K>::encrypt(&mut rng, pk, &(*m * (Q / beta.pow(i as u32) as u64)))
+                GLWE::<R, K>::encrypt(&mut rng, pk, &(*m * (R::Q / beta.pow(i as u32) as u64)))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -39,21 +33,22 @@ impl<const Q: u64, const N: usize, const K: usize> GLev<Q, N, K> {
         mut rng: impl Rng,
         beta: u32,
         l: u32,
-        sk: &SecretKey<Q, N, K>,
-        m: &Rq<Q, N>,
+        sk: &SecretKey<R, K>,
+        m: &R,
+        // delta: u64,
     ) -> Result<Self> {
-        let glev: Vec<GLWE<Q, N, K>> = (1..l + 1)
+        let glev: Vec<GLWE<R, K>> = (1..l + 1)
             .map(|i| {
-                GLWE::<Q, N, K>::encrypt_s(&mut rng, sk, &(*m * (Q / beta.pow(i as u32) as u64)))
+                GLWE::<R, K>::encrypt_s(&mut rng, sk, &(*m * (R::Q / beta.pow(i as u32) as u64)))
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self(glev))
     }
 
-    pub fn decrypt<const T: u64>(&self, sk: &SecretKey<Q, N, K>, beta: u32) -> Rq<Q, N> {
-        let pt = self.0[0].decrypt(sk);
-        pt.mul_div_round(beta as u64, Q)
+    pub fn decrypt<const T: u64>(&self, sk: &SecretKey<R, K>, beta: u32) -> R {
+        let pt = self.0[1].decrypt(sk);
+        pt.mul_div_round(beta as u64, R::Q)
     }
 }
 
@@ -63,6 +58,7 @@ mod tests {
     use rand::distributions::Uniform;
 
     use super::*;
+    use arith::Rq;
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
@@ -70,25 +66,25 @@ mod tests {
         const N: usize = 128;
         const T: u64 = 2; // plaintext modulus
         const K: usize = 16;
-        type S = GLev<Q, N, K>;
+        type S = GLev<Rq<Q, N>, K>;
 
         let beta: u32 = 2;
         let l: u32 = 16;
 
+        // let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
 
         for _ in 0..200 {
-            let (sk, pk) = GLWE::<Q, N, K>::new_key(&mut rng)?;
+            let (sk, pk) = GLWE::<Rq<Q, N>, K>::new_key(&mut rng)?;
 
             let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let p: Rq<Q, N> = S::encode::<T>(&m); // plaintext
+            let m: Rq<Q, N> = m.remodule::<Q>();
 
-            let c = S::encrypt(&mut rng, beta, l, &pk, &p)?;
-            let p_recovered = c.decrypt::<T>(&sk, beta);
-            let m_recovered = S::decode::<T>(&p_recovered);
+            let c = S::encrypt(&mut rng, beta, l, &pk, &m)?;
+            let m_recovered = c.decrypt::<T>(&sk, beta);
 
-            assert_eq!(m, m_recovered);
+            assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
         }
 
         Ok(())
