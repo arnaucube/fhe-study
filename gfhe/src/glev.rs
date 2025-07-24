@@ -73,11 +73,11 @@ mod tests {
 
         // let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = GLWE::<Rq<Q, N>, K>::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let m: Rq<Q, N> = m.remodule::<Q>();
 

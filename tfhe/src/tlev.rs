@@ -72,11 +72,11 @@ mod tests {
         let l: u32 = 16;
 
         let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::<K>::new_key(&mut rng)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
             let m: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
             let p: Tn<1> = S::encode::<T>(&m); // plaintext
 
