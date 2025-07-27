@@ -1,4 +1,5 @@
 use anyhow::Result;
+use itertools::zip_eq;
 use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops::{Add, Mul};
@@ -6,8 +7,6 @@ use std::ops::{Add, Mul};
 use arith::{Ring, TR};
 
 use crate::glwe::{PublicKey, SecretKey, GLWE};
-
-const ERR_SIGMA: f64 = 3.2;
 
 // l GLWEs
 #[derive(Clone, Debug)]
@@ -49,6 +48,21 @@ impl<R: Ring, const K: usize> GLev<R, K> {
     pub fn decrypt<const T: u64>(&self, sk: &SecretKey<R, K>, beta: u32) -> R {
         let pt = self.0[1].decrypt(sk);
         pt.mul_div_round(beta as u64, R::Q)
+    }
+}
+
+// dot product between a GLev and Vec<R>.
+// Used for operating decompositions with KSK_i.
+// GLev * Vec<R> --> GLWE
+impl<R: Ring, const K: usize> Mul<Vec<R>> for GLev<R, K> {
+    type Output = GLWE<R, K>;
+    fn mul(self, v: Vec<R>) -> GLWE<R, K> {
+        // l times GLWES
+        let glwes: Vec<GLWE<R, K>> = self.0;
+
+        // l iterations
+        let r: GLWE<R, K> = zip_eq(v, glwes).map(|(v_i, glwe_i)| glwe_i * v_i).sum();
+        r
     }
 }
 

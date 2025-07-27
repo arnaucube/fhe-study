@@ -37,6 +37,28 @@ impl<const K: usize> TGSW<K> {
     }
 }
 
+// external product TGSW x TLWE
+impl<const K: usize> Mul<TLWE<K>> for TGSW<K> {
+    type Output = TLWE<K>;
+
+    fn mul(self, tlwe: TLWE<K>) -> TLWE<K> {
+        let beta: u32 = 2;
+        let l: u32 = 64; // TODO wip
+
+        // since N=1, each tlwe element is a vector of length=1, decomposed into
+        // l elements, and we have K of them
+        let tlwe_ab: Vec<T64> = [tlwe.0 .0 .0.clone(), vec![tlwe.0 .1]].concat();
+
+        let tgsw_ab: Vec<TLev<K>> = [self.0.clone(), vec![self.1]].concat();
+        assert_eq!(tgsw_ab.len(), tlwe_ab.len());
+
+        let r: TLWE<K> = zip_eq(tgsw_ab, tlwe_ab)
+            .map(|(tlev_i, tlwe_i)| tlev_i * tlwe_i.decompose(beta, l))
+            .sum();
+        r
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -67,6 +89,44 @@ mod tests {
             let m_recovered = TLev::<K>::decode::<T>(&p_recovered);
 
             assert_eq!(m, m_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_external_product() -> Result<()> {
+        const T: u64 = 2; // plaintext modulus
+        const K: usize = 32;
+
+        let beta: u32 = 2;
+        let l: u32 = 64;
+
+        let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
+
+        for i in 0..50 {
+            dbg!(&i);
+            let (sk, _) = TLWE::<K>::new_key(&mut rng)?;
+
+            let m1: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p1: T64 = TLev::<K>::encode::<T>(&m1);
+
+            let m2: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p2: T64 = TLWE::<K>::encode::<T>(&m2); // scaled by delta
+
+            let tgsw = TGSW::<K>::encrypt_s(&mut rng, beta, l, &sk, &p1)?;
+            let tlwe = TLWE::<K>::encrypt_s(&mut rng, &sk, &p2)?;
+
+            let res: TLWE<K> = tgsw * tlwe;
+
+            // let p_recovered = res.decrypt(&sk, beta);
+            let p_recovered = res.decrypt(&sk);
+            // downscaled by delta^-1
+            let res_recovered = TLWE::<K>::decode::<T>(&p_recovered);
+
+            // assert_eq!(m1 * m2, m_recovered);
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), res_recovered);
         }
 
         Ok(())

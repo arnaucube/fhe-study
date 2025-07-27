@@ -64,6 +64,27 @@ impl<const K: usize> TLev<K> {
 }
 // TODO review u64::MAX, since is -1 of the value we actually want
 
+impl<const K: usize> TLev<K> {
+    pub fn iter(&self) -> std::slice::Iter<TLWE<K>> {
+        self.0.iter()
+    }
+}
+
+// dot product between a TLev and Vec<T64>, usually Vec<T64> comes from a
+// decomposition of T64
+// TLev * Vec<T64> --> TLWE
+impl<const K: usize> Mul<Vec<T64>> for TLev<K> {
+    type Output = TLWE<K>;
+    fn mul(self, v: Vec<T64>) -> Self::Output {
+        assert_eq!(self.0.len(), v.len());
+
+        // l TLWES
+        let tlwes: Vec<TLWE<K>> = self.0;
+        let r: TLWE<K> = zip_eq(v, tlwes).map(|(a_d_i, glwe_i)| glwe_i * a_d_i).sum();
+        r
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -94,6 +115,39 @@ mod tests {
             let m_recovered = S::decode::<T>(&p_recovered);
 
             assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tlev_vect64_product() -> Result<()> {
+        const T: u64 = 2; // plaintext modulus
+        const K: usize = 16;
+
+        let beta: u32 = 2;
+        let l: u32 = 16;
+
+        let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
+
+        for _ in 0..200 {
+            let (sk, pk) = TLWE::<K>::new_key(&mut rng)?;
+
+            let m1: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let m2: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p1: T64 = TLev::<K>::encode::<T>(&m1);
+            let p2: T64 = TLev::<K>::encode::<T>(&m2);
+
+            let c1 = TLev::<K>::encrypt(&mut rng, beta, l, &pk, &p1)?;
+            let c2 = p2.decompose(beta, l);
+
+            let c3 = c1 * c2;
+
+            let p_recovered = c3.decrypt(&sk);
+            let m_recovered = TLev::<K>::decode::<T>(&p_recovered);
+
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m_recovered);
         }
 
         Ok(())

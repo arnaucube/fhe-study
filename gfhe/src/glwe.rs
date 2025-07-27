@@ -12,7 +12,8 @@ use arith::{Ring, Rq, Zq, TR};
 
 use crate::glev::GLev;
 
-const ERR_SIGMA: f64 = 3.2;
+// const ERR_SIGMA: f64 = 3.2;
+const ERR_SIGMA: f64 = 0.0; // TODO WIP
 
 /// GLWE implemented over the `Ring` trait, so that it can be also instantiated
 /// over the Torus polynomials 𝕋_<N,q>[X] = 𝕋_q[X]/ (X^N+1).
@@ -68,21 +69,10 @@ impl<R: Ring, const K: usize> GLWE<R, K> {
 
         // K iterations, ksk.0 contains K times GLev
         let rhs: GLWE<R, K> = zip_eq(a.0, ksk.0.clone())
-            .map(|(a_i, ksk_i)| Self::dot_prod(a_i.decompose(beta, l), ksk_i))
+            .map(|(a_i, ksk_i)| ksk_i * a_i.decompose(beta, l)) // dot_product
             .sum();
 
         lhs - rhs
-    }
-    // note: a_decomp is of length N
-    fn dot_prod(a_decomp: Vec<R>, ksk_i: GLev<R, K>) -> GLWE<R, K> {
-        // l times GLWES
-        let glwes: Vec<GLWE<R, K>> = ksk_i.0;
-
-        // l iterations
-        let r: GLWE<R, K> = zip_eq(a_decomp, glwes)
-            .map(|(a_d_i, glwe_i)| glwe_i * a_d_i)
-            .sum();
-        r
     }
 
     // encrypts with the given SecretKey (instead of PublicKey)
