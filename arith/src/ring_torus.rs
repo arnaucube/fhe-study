@@ -10,7 +10,7 @@
 use rand::{distributions::Distribution, Rng};
 use std::array;
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::{ring::Ring, torus::T64, Rq, Zq};
 
@@ -34,7 +34,7 @@ impl<const N: usize> Ring for Tn<N> {
     }
 
     fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
-        Self(array::from_fn(|_| T64::rand_f64(&mut rng, &dist)))
+        Self(array::from_fn(|_| T64::rand(&mut rng, &dist)))
     }
 
     fn from_vec(coeffs: Vec<Self::C>) -> Self {
@@ -149,6 +149,14 @@ impl<const N: usize> SubAssign for Tn<N> {
         for i in 0..N {
             self.0[i] -= rhs.0[i];
         }
+    }
+}
+
+impl<const N: usize> Neg for Tn<N> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Tn(array::from_fn(|i| -self.0[i]))
     }
 }
 

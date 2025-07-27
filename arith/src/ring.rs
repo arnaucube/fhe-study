@@ -1,7 +1,7 @@
 use rand::{distributions::Distribution, Rng};
 use std::fmt::Debug;
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 /// Represents a ring element. Currently implemented by ring_nq.rs#Rq and
 /// ring_torus.rs#Tn. Is not a 'pure algebraic ring', but more a custom trait
@@ -17,6 +17,7 @@ pub trait Ring:
     + Mul<Output = Self> // internal product
     + Mul<u64, Output = Self> // scalar mul, external product
     + Mul<Self::C, Output = Self>
+    + Neg<Output = Self>
     + PartialEq
     + Debug
     + Clone

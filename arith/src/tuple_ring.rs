@@ -8,7 +8,7 @@ use rand_distr::{Normal, Uniform};
 use std::iter::Sum;
 use std::{
     array,
-    ops::{Add, Mul, Sub},
+    ops::{Add, Mul, Neg, Sub},
 };
 
 use crate::Ring;
@@ -37,6 +37,12 @@ impl<R: Ring, const K: usize> TR<R, K> {
     }
 }
 
+impl<R: Ring, const K: usize> TR<R, K> {
+    pub fn iter(&self) -> std::slice::Iter<R> {
+        self.0.iter()
+    }
+}
+
 impl<R: Ring, const K: usize> Add<TR<R, K>> for TR<R, K> {
     type Output = Self;
     fn add(self, other: Self) -> Self {
@@ -52,6 +58,14 @@ impl<R: Ring, const K: usize> Sub<TR<R, K>> for TR<R, K> {
     type Output = Self;
     fn sub(self, other: Self) -> Self {
         Self(zip_eq(self.0, other.0).map(|(s, o)| s - o).collect())
+    }
+}
+
+impl<R: Ring, const K: usize> Neg for TR<R, K> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self(self.0.iter().map(|&e_i| -e_i).collect())
     }
 }
 
