@@ -35,9 +35,13 @@ impl<const K: usize> TGSW<K> {
     pub fn from_tlwe(_tlwe: TLWE<K>) -> Self {
         todo!()
     }
+
+    pub fn cmux(bit: Self, ct1: TLWE<K>, ct2: TLWE<K>) -> TLWE<K> {
+        ct1.clone() + (bit * (ct2 - ct1))
+    }
 }
 
-// external product TGSW x TLWE
+/// External product TGSW x TLWE
 impl<const K: usize> Mul<TLWE<K>> for TGSW<K> {
     type Output = TLWE<K>;
 
@@ -105,8 +109,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let msg_dist = Uniform::new(0_u64, T);
 
-        for i in 0..50 {
-            dbg!(&i);
+        for _ in 0..50 {
             let (sk, _) = TLWE::<K>::new_key(&mut rng)?;
 
             let m1: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
@@ -127,6 +130,49 @@ mod tests {
 
             // assert_eq!(m1 * m2, m_recovered);
             assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), res_recovered);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cmux() -> Result<()> {
+        const T: u64 = 2; // plaintext modulus
+        const K: usize = 32;
+
+        let beta: u32 = 2;
+        let l: u32 = 64;
+
+        let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
+
+        for _ in 0..50 {
+            let (sk, _) = TLWE::<K>::new_key(&mut rng)?;
+
+            let m1: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p1: T64 = TLWE::<K>::encode::<T>(&m1); // scaled by delta
+
+            let m2: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p2: T64 = TLWE::<K>::encode::<T>(&m2); // scaled by delta
+
+            for bit_raw in 0..2 {
+                let bit = TGSW::<K>::encrypt_s(&mut rng, beta, l, &sk, &T64(bit_raw))?;
+
+                let c1 = TLWE::<K>::encrypt_s(&mut rng, &sk, &p1)?;
+                let c2 = TLWE::<K>::encrypt_s(&mut rng, &sk, &p2)?;
+
+                let res: TLWE<K> = TGSW::cmux(bit, c1, c2);
+
+                let p_recovered = res.decrypt(&sk);
+                // downscaled by delta^-1
+                let res_recovered = TLWE::<K>::decode::<T>(&p_recovered);
+
+                if bit_raw == 0 {
+                    assert_eq!(m1, res_recovered);
+                } else {
+                    assert_eq!(m2, res_recovered);
+                }
+            }
         }
 
         Ok(())
