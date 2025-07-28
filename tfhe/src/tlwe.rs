@@ -10,6 +10,8 @@ use std::ops::{Add, AddAssign, Mul, Sub};
 use arith::{Ring, Rq, Tn, T64, TR};
 use gfhe::{glwe, GLWE};
 
+use crate::tlev::TLev;
+
 // #[derive(Clone, Debug)]
 // pub struct SecretKey<const K: usize>(glwe::SecretKey<T64, K>);
 pub type SecretKey<const K: usize> = glwe::SecretKey<T64, K>;
@@ -17,6 +19,9 @@ pub type SecretKey<const K: usize> = glwe::SecretKey<T64, K>;
 // #[derive(Clone, Debug)]
 // pub struct PublicKey<const K: usize>(glwe::PublicKey<T64, K>);
 pub type PublicKey<const K: usize> = glwe::PublicKey<T64, K>;
+
+#[derive(Clone, Debug)]
+pub struct KSK<const K: usize>(Vec<TLev<K>>);
 
 #[derive(Clone, Debug)]
 pub struct TLWE<const K: usize>(pub GLWE<T64, K>);
@@ -54,6 +59,35 @@ impl<const K: usize> TLWE<K> {
     }
     pub fn decrypt(&self, sk: &SecretKey<K>) -> T64 {
         self.0.decrypt(&sk)
+    }
+
+    pub fn new_ksk(
+        mut rng: impl Rng,
+        beta: u32,
+        l: u32,
+        sk: &SecretKey<K>,
+        new_sk: &SecretKey<K>,
+    ) -> Result<KSK<K>> {
+        let r: Vec<TLev<K>> = (0..K)
+            .into_iter()
+            .map(|i|
+                // treat sk_i as the msg being encrypted
+                TLev::<K>::encrypt_s(&mut rng, beta, l, &new_sk, &sk.0 .0[i]))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(KSK(r))
+    }
+    pub fn key_switch(&self, beta: u32, l: u32, ksk: &KSK<K>) -> Self {
+        let (a, b): (TR<T64, K>, T64) = (self.0 .0.clone(), self.0 .1);
+
+        let lhs: TLWE<K> = TLWE(GLWE(TR::zero(), b));
+
+        // K iterations, ksk.0 contains K times GLev
+        let rhs: TLWE<K> = zip_eq(a.0, ksk.0.clone())
+            .map(|(a_i, ksk_i)| ksk_i * a_i.decompose(beta, l)) // dot_product
+            .sum();
+
+        lhs - rhs
     }
 }
 
@@ -245,6 +279,45 @@ mod tests {
             let m3_recovered = S::decode::<T>(&p3_recovered);
             assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m3_recovered);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_key_switch() -> Result<()> {
+        const T: u64 = 128; // plaintext modulus
+        const K: usize = 16;
+        type S = TLWE<K>;
+
+        let beta: u32 = 2;
+        let l: u32 = 64;
+
+        let mut rng = rand::thread_rng();
+
+        let (sk, pk) = S::new_key(&mut rng)?;
+        let (sk2, _) = S::new_key(&mut rng)?;
+        // ksk to switch from sk to sk2
+        let ksk = S::new_ksk(&mut rng, beta, l, &sk, &sk2)?;
+
+        let msg_dist = Uniform::new(0_u64, T);
+        let m = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+        let p = S::encode::<T>(&m); // plaintext
+                                    //
+        let c = S::encrypt_s(&mut rng, &sk, &p)?;
+
+        let c2 = c.key_switch(beta, l, &ksk);
+
+        // decrypt with the 2nd secret key
+        let p_recovered = c2.decrypt(&sk2);
+        let m_recovered = S::decode::<T>(&p_recovered);
+        assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
+
+        // do the same but now encrypting with pk
+        let c = S::encrypt(&mut rng, &pk, &p)?;
+        let c2 = c.key_switch(beta, l, &ksk);
+        let p_recovered = c2.decrypt(&sk2);
+        let m_recovered = S::decode::<T>(&p_recovered);
+        assert_eq!(m, m_recovered);
 
         Ok(())
     }
