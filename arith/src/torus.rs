@@ -50,8 +50,15 @@ impl Ring for T64 {
         todo!()
     }
 
+    // modulus switch from Q to Q2: self * Q2/Q
     fn mod_switch<const Q2: u64>(&self) -> T64 {
-        todo!()
+        // for the moment we assume Q|Q2, since Q=2^64, check that Q2 is a power
+        // of two:
+        assert!(Q2.is_power_of_two());
+        // since Q=2^64, dividing Q2/Q is equivalent to dividing 2^log2(Q2)/2^64
+        // which would be like right-shifting 64-log2(Q2).
+        let log2_q2 = 63 - Q2.leading_zeros();
+        T64(self.0 >> (64 - log2_q2))
     }
 
     fn mul_div_round(&self, num: u64, den: u64) -> Self {

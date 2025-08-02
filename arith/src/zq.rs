@@ -269,6 +269,9 @@ impl<const Q: u64> Neg for Zq<Q> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
+        if self.0 == 0 {
+            return self;
+        }
         Zq(Q - self.0)
     }
 }

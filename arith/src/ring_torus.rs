@@ -82,6 +82,31 @@ impl<const N: usize> Ring for Tn<N> {
     }
 }
 
+impl<const N: usize> Tn<N> {
+    // multiply self by X^-h
+    pub fn left_rotate(&self, h: usize) -> Self {
+        dbg!(&h);
+        dbg!(&N);
+        let h = h % N;
+        assert!(h < N);
+        let c = self.0;
+        // c[h], c[h+1], c[h+2], ..., c[n-1],  -c[0], -c[1], ..., -c[h-1]
+        // let r: Vec<T64> = vec![c[h..N], c[0..h].iter().map(|&c_i| -c_i).collect()].concat();
+        dbg!(&h);
+        let r: Vec<T64> = c[h..N]
+            .iter()
+            .copied()
+            .chain(c[0..h].iter().map(|&x| -x))
+            .collect();
+        Self::from_vec(r)
+    }
+
+    pub fn from_vec_u64(v: Vec<u64>) -> Self {
+        let coeffs = v.iter().map(|c| T64(*c)).collect();
+        Self::from_vec(coeffs)
+    }
+}
+
 // apply mod (X^N+1)
 pub fn modulus<const N: usize>(p: &mut Vec<T64>) {
     if p.len() < N {
@@ -225,5 +250,42 @@ impl<const N: usize> Mul<&u64> for &Tn<N> {
     type Output = Tn<N>;
     fn mul(self, s: &u64) -> Self::Output {
         Tn::<N>(array::from_fn(|i| self.0[i] * *s))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_left_rotate() {
+        const N: usize = 4;
+        let f = Tn::<N>::from_vec(
+            vec![2i64, 3, -4, -1]
+                .iter()
+                .map(|c| T64(*c as u64))
+                .collect(),
+        );
+
+        // expect f*x^-3 == -1 -2x -3x^2 +4x^3
+        assert_eq!(
+            f.left_rotate(3),
+            Tn::<N>::from_vec(
+                vec![-1i64, -2, -3, 4]
+                    .iter()
+                    .map(|c| T64(*c as u64))
+                    .collect(),
+            )
+        );
+        // expect f*x^-1 == 3 -4x -1x^2 -2x^3
+        assert_eq!(
+            f.left_rotate(1),
+            Tn::<N>::from_vec(
+                vec![3i64, -4, -1, -2]
+                    .iter()
+                    .map(|c| T64(*c as u64))
+                    .collect(),
+            )
+        );
     }
 }
