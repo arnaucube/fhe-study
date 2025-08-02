@@ -13,8 +13,24 @@ use gfhe::{glwe, GLWE};
 use crate::tlev::TLev;
 
 // #[derive(Clone, Debug)]
-// pub struct SecretKey<const K: usize>(glwe::SecretKey<T64, K>);
-pub type SecretKey<const K: usize> = glwe::SecretKey<T64, K>;
+pub struct SecretKey<const K: usize>(pub glwe::SecretKey<T64, K>);
+// pub type SecretKey<const K: usize> = glwe::SecretKey<T64, K>;
+
+impl<const KN: usize> SecretKey<KN> {
+    /// from TFHE [2018-421] paper: A TLWE key k \in B^n, can be interpreted as a
+    /// TRLWE key K \in B_N[X]^k having the same sequence of coefficients and
+    /// vice-versa.
+    pub fn to_tglwe<const N: usize, const K: usize>(self) -> crate::tglwe::SecretKey<N, K> {
+        let s: TR<T64, KN> = self.0 .0;
+        // split into K vectors, and interpret each of them as a T_N[X]/(X^N+1)
+        // polynomial
+        let r: Vec<Tn<N>> =
+            s.0.chunks(N)
+                .map(|v| Tn::<N>::from_vec(v.to_vec()))
+                .collect();
+        crate::tglwe::SecretKey(glwe::SecretKey::<Tn<N>, K>(TR(r)))
+    }
+}
 
 // #[derive(Clone, Debug)]
 // pub struct PublicKey<const K: usize>(glwe::PublicKey<T64, K>);
@@ -32,9 +48,9 @@ impl<const K: usize> TLWE<K> {
     }
 
     pub fn new_key(rng: impl Rng) -> Result<(SecretKey<K>, PublicKey<K>)> {
-        let (sk, pk) = GLWE::new_key(rng)?;
+        let (sk, pk): (glwe::SecretKey<T64, K>, glwe::PublicKey<T64, K>) = GLWE::new_key(rng)?;
         // Ok((SecretKey(sk), PublicKey(pk)))
-        Ok((sk, pk))
+        Ok((SecretKey(sk), pk))
     }
 
     pub fn encode<const P: u64>(m: &Rq<P, 1>) -> T64 {
@@ -50,7 +66,7 @@ impl<const K: usize> TLWE<K> {
 
     // encrypts with the given SecretKey (instead of PublicKey)
     pub fn encrypt_s(rng: impl Rng, sk: &SecretKey<K>, p: &T64) -> Result<Self> {
-        let glwe = GLWE::encrypt_s(rng, &sk, p)?;
+        let glwe = GLWE::encrypt_s(rng, &sk.0, p)?;
         Ok(Self(glwe))
     }
     pub fn encrypt(rng: impl Rng, pk: &PublicKey<K>, p: &T64) -> Result<Self> {
@@ -58,7 +74,7 @@ impl<const K: usize> TLWE<K> {
         Ok(Self(glwe))
     }
     pub fn decrypt(&self, sk: &SecretKey<K>) -> T64 {
-        self.0.decrypt(&sk)
+        self.0.decrypt(&sk.0)
     }
 
     pub fn new_ksk(
@@ -72,7 +88,7 @@ impl<const K: usize> TLWE<K> {
             .into_iter()
             .map(|i|
                 // treat sk_i as the msg being encrypted
-                TLev::<K>::encrypt_s(&mut rng, beta, l, &new_sk, &sk.0 .0[i]))
+                TLev::<K>::encrypt_s(&mut rng, beta, l, &new_sk, &sk.0.0 .0[i]))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(KSK(r))

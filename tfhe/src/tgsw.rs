@@ -23,7 +23,7 @@ impl<const K: usize> TGSW<K> {
         m: &T64,
     ) -> Result<Self> {
         let a: Vec<TLev<K>> = (0..K)
-            .map(|i| TLev::encrypt_s(&mut rng, beta, l, sk, &(-sk.0 .0[i] * *m)))
+            .map(|i| TLev::encrypt_s(&mut rng, beta, l, sk, &(-sk.0 .0 .0[i] * *m)))
             .collect::<Result<Vec<_>>>()?;
         let b: TLev<K> = TLev::encrypt_s(&mut rng, beta, l, sk, m)?;
         Ok(Self(a, b))

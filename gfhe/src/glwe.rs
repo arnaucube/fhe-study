@@ -45,6 +45,15 @@ impl<R: Ring, const K: usize> GLWE<R, K> {
         let pk: PublicKey<R, K> = PublicKey((&a * &s) + e, a);
         Ok((SecretKey(s), pk))
     }
+    pub fn pk_from_sk(mut rng: impl Rng, sk: SecretKey<R, K>) -> Result<PublicKey<R, K>> {
+        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+
+        let a: TR<R, K> = TR::rand(&mut rng, Uniform::new(0_f64, R::Q as f64));
+        let e = R::rand(&mut rng, Xi_err);
+
+        let pk: PublicKey<R, K> = PublicKey((&a * &sk.0) + e, a);
+        Ok(pk)
+    }
 
     pub fn new_ksk(
         mut rng: impl Rng,
