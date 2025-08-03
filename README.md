@@ -36,13 +36,13 @@ let m3 = M::rand_u64(&mut rng, msg_dist)?;
 // encode the msgs into the plaintext space
 let p1 = S::encode::<T>(&m1); // plaintext
 let p2 = S::encode::<T>(&m2); // plaintext
-let c3_const: Tn<1> = Tn(array::from_fn(|i| T64(m3.coeffs()[i].0))); // encode it as constant value
+let c3_const: Tn<1> = Tn(array::from_fn(|i| T64(m3.coeffs()[i].0))); // encode it as constant
 
 let c1 = S::encrypt(&mut rng, &pk, &p1)?;
 let c2 = S::encrypt(&mut rng, &pk, &p2)?;
 
 // now we can do encrypted operations (notice that we do them using simple
-// operations by operator overloading):
+// operation notation by rust's operator overloading):
 let c_12 = c1 + c2;
 let c4 = c_12 * c3_const;
 

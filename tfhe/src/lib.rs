@@ -5,6 +5,7 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
+pub mod tggsw;
 pub mod tglwe;
 pub mod tgsw;
 pub mod tlev;
