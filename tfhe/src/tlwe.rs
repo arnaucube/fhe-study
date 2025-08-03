@@ -132,21 +132,37 @@ pub fn blind_rotation<const N: usize, const K: usize, const KN: usize, const KN2
     c_j
 }
 
+pub fn bootstrapping<const N: usize, const K: usize, const KN: usize, const KN2: u64>(
+    btk: BootstrappingKey<N, K, KN>,
+    table: TGLWE<N, K>,
+    c: TLWE<KN>,
+) -> TLWE<KN> {
+    let rotated: TGLWE<N, K> = blind_rotation::<N, K, KN, KN2>(c, btk.clone(), table);
+    let c_h: TLWE<KN> = rotated.sample_extraction(0);
+    let r = c_h.key_switch(2, 64, &btk.1);
+    r
+}
+
 #[derive(Clone, Debug)]
-pub struct BootstrappingKey<const N: usize, const K: usize, const KN: usize>(pub Vec<TGGSW<N, K>>);
+pub struct BootstrappingKey<const N: usize, const K: usize, const KN: usize>(
+    pub Vec<TGGSW<N, K>>,
+    pub KSK<KN>,
+);
 impl<const N: usize, const K: usize, const KN: usize> BootstrappingKey<N, K, KN> {
     pub fn from_sk(mut rng: impl Rng, sk: &tglwe::SecretKey<N, K>) -> Result<Self> {
         let (beta, l) = (2u32, 64u32); // TMP
                                        //
         let s: TR<Tn<N>, K> = sk.0 .0.clone();
+        let (sk2, _) = TLWE::<KN>::new_key(&mut rng)?; // TLWE<KN> compatible with TGLWE<N,K>
 
         // each btk_j = TGGSW_sk(s_i)
         let btk: Vec<TGGSW<N, K>> = s
             .iter()
             .map(|s_i| TGGSW::<N, K>::encrypt_s(&mut rng, beta, l, sk, s_i))
             .collect::<Result<Vec<_>>>()?;
+        let ksk = TLWE::<KN>::new_ksk(&mut rng, beta, l, &sk.to_tlwe(), &sk2)?;
 
-        Ok(Self(btk))
+        Ok(Self(btk, ksk))
     }
 }
 
@@ -396,6 +412,46 @@ mod tests {
         let p_recovered = c2.decrypt(&sk2);
         let m_recovered = S::decode::<T>(&p_recovered);
         assert_eq!(m, m_recovered);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bootstrapping() -> Result<()> {
+        const T: u64 = 128; // plaintext modulus
+        const K: usize = 1;
+        const N: usize = 1024;
+        const KN: usize = K * N;
+        let mut rng = rand::thread_rng();
+
+        let start = Instant::now();
+        let table: TGLWE<N, K> = compute_lookup_table::<T, K, N>();
+        println!("table took: {:?}", start.elapsed());
+
+        let (sk, _) = TGLWE::<N, K>::new_key::<KN>(&mut rng)?;
+        let sk_tlwe: SecretKey<KN> = sk.to_tlwe::<KN>();
+
+        let start = Instant::now();
+        let btk = BootstrappingKey::<N, K, KN>::from_sk(&mut rng, &sk)?;
+        println!("btk took: {:?}", start.elapsed());
+
+        let msg_dist = Uniform::new(0_u64, T);
+        let m = Rq::<T, 1>::rand_u64(&mut rng, msg_dist)?;
+        dbg!(&m);
+        let p = TLWE::<K>::encode::<T>(&m); // plaintext
+
+        let c = TLWE::<KN>::encrypt_s(&mut rng, &sk_tlwe, &p)?;
+
+        let start = Instant::now();
+        // the ugly const generics are temporary
+        let bootstrapped: TLWE<KN> =
+            bootstrapping::<N, K, KN, { K as u64 * N as u64 }>(btk, table, c);
+        println!("bootstrapping took: {:?}", start.elapsed());
+
+        let p_recovered: T64 = bootstrapped.decrypt(&sk_tlwe);
+        let m_recovered = TLWE::<KN>::decode::<T>(&p_recovered);
+        dbg!(&m_recovered);
+        assert_eq!(m_recovered, m);
 
         Ok(())
     }

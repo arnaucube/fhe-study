@@ -52,3 +52,33 @@ let m4 = S::decode::<T>(&p4_recovered);
 
 // m4 is equal to (m1+m2)*m3
 ```
+
+
+## Status of the implementation
+
+- TFHE
+	- {TLWE, TGLWE, TLev, TGLev, TGSW, TGGSW} encryption & decryption
+	- addition of ciphertexts, addition & multiplication of ciphertext by a plaintext
+	- external products of ciphertexts
+		- TGSW x TLWE
+		- TGGSW x TGLWE
+	- TGSW & TGGSW CMux gate
+	- blind rotation, key switching, mod switching
+	- bootstrapping
+- CKKS
+	- encoding & decoding
+	- encryption & decryption
+	- addition & substraction of ciphertexts
+- BFV
+	- encryption & decryption
+	- addition & substraction of ciphertexts
+	- addition & multiplication of ciphertext by a plaintext
+	- multiplication of ciphertexts with relinearization
+- GFHE (generalized FHE)
+	- {GLWE & GLev} encryption & decryption
+	- key switching, mod switching
+	- addition & substraction of ciphertexts
+	- addition & multiplication of ciphertext by a plaintext
+- arith
+	- base arithmetic for $\mathbb{Z}_q,~~ R_q=\mathbb{Z}_q[X]/(X^N+1),~~ R=\mathbb{Z}[X]/(X^N+1),~~ \mathbb{T}_q[X]/(X^N +1)$
+	- NTT implementation (negacyclic convolution)

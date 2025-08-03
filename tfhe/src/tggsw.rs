@@ -132,3 +132,49 @@ impl<const N: usize, const K: usize> Mul<Vec<Tn<N>>> for TGLev<N, K> {
         r
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use rand::distributions::Uniform;
+
+    use super::*;
+    #[test]
+    fn test_external_product() -> Result<()> {
+        const T: u64 = 16; // plaintext modulus
+        const K: usize = 4;
+        const N: usize = 64;
+        const KN: usize = K * N;
+
+        let beta: u32 = 2;
+        let l: u32 = 64;
+
+        let mut rng = rand::thread_rng();
+        let msg_dist = Uniform::new(0_u64, T);
+
+        for _ in 0..50 {
+            let (sk, _) = TGLWE::<N, K>::new_key::<KN>(&mut rng)?;
+
+            let m1: Rq<T, N> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p1: Tn<N> = TGLev::<N, K>::encode::<T>(&m1);
+
+            let m2: Rq<T, N> = Rq::rand_u64(&mut rng, msg_dist)?;
+            let p2: Tn<N> = TGLWE::<N, K>::encode::<T>(&m2); // scaled by delta
+
+            let tgsw = TGGSW::<N, K>::encrypt_s(&mut rng, beta, l, &sk, &p1)?;
+            let tlwe = TGLWE::<N, K>::encrypt_s(&mut rng, &sk, &p2)?;
+
+            let res: TGLWE<N, K> = tgsw * tlwe;
+
+            // let p_recovered = res.decrypt(&sk, beta);
+            let p_recovered = res.decrypt(&sk);
+            // downscaled by delta^-1
+            let res_recovered = TGLWE::<N, K>::decode::<T>(&p_recovered);
+
+            // assert_eq!(m1 * m2, m_recovered);
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), res_recovered);
+        }
+
+        Ok(())
+    }
+}

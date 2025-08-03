@@ -85,14 +85,11 @@ impl<const N: usize> Ring for Tn<N> {
 impl<const N: usize> Tn<N> {
     // multiply self by X^-h
     pub fn left_rotate(&self, h: usize) -> Self {
-        dbg!(&h);
-        dbg!(&N);
         let h = h % N;
         assert!(h < N);
         let c = self.0;
         // c[h], c[h+1], c[h+2], ..., c[n-1],  -c[0], -c[1], ..., -c[h-1]
         // let r: Vec<T64> = vec![c[h..N], c[0..h].iter().map(|&c_i| -c_i).collect()].concat();
-        dbg!(&h);
         let r: Vec<T64> = c[h..N]
             .iter()
             .copied()
