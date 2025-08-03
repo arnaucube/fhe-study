@@ -19,12 +19,12 @@ pub struct SecretKey<const N: usize, const K: usize>(pub glwe::SecretKey<Tn<N>, 
 // pub struct SecretKey<const K: usize>(pub tlwe::SecretKey<K>);
 
 impl<const N: usize, const K: usize> SecretKey<N, K> {
-    pub fn to_tlwe<const KN: usize>(self) -> tlwe::SecretKey<K> {
-        let s: TR<Tn<N>, K> = self.0 .0;
+    pub fn to_tlwe<const KN: usize>(&self) -> tlwe::SecretKey<KN> {
+        let s: TR<Tn<N>, K> = self.0 .0.clone();
 
         let r: Vec<Vec<T64>> = s.0.iter().map(|s_i| s_i.coeffs()).collect();
         let r: Vec<T64> = r.into_iter().flatten().collect();
-        tlwe::SecretKey(glwe::SecretKey(TR(r)))
+        tlwe::SecretKey::<KN>(glwe::SecretKey::<T64, KN>(TR::<T64, KN>::new(r)))
     }
 }
 
@@ -37,15 +37,18 @@ impl<const N: usize, const K: usize> TGLWE<N, K> {
     pub fn zero() -> Self {
         Self(GLWE::<Tn<N>, K>::zero())
     }
+    pub fn from_plaintext(p: Tn<N>) -> Self {
+        Self(GLWE::<Tn<N>, K>::from_plaintext(p))
+    }
 
     pub fn new_key<const KN: usize>(
         mut rng: impl Rng,
     ) -> Result<(SecretKey<N, K>, PublicKey<N, K>)> {
-        assert_eq!(KN, K * N); // this is wip, while not being able to compute K*N
+        // assert_eq!(KN, K * N); // this is wip, while not being able to compute K*N
         let (sk_tlwe, _) = TLWE::<KN>::new_key(&mut rng)?;
         // let sk = crate::tlwe::sk_to_tglwe::<N, K, KN>(sk_tlwe);
         let sk = sk_tlwe.to_tglwe::<N, K>();
-        let pk = GLWE::pk_from_sk(rng, sk.0.clone())?;
+        let pk: PublicKey<N, K> = GLWE::pk_from_sk(rng, sk.0.clone())?;
         Ok((sk, pk))
     }
 
@@ -73,7 +76,7 @@ impl<const N: usize, const K: usize> TGLWE<N, K> {
     }
 
     /// Sample extraction / Coefficient extraction
-    pub fn sample_extraction(&self, h: usize) -> TLWE<K> {
+    pub fn sample_extraction<const KN: usize>(&self, h: usize) -> TLWE<KN> {
         assert!(h < N);
 
         let a: TR<Tn<N>, K> = self.0 .0.clone();
@@ -90,6 +93,11 @@ impl<const N: usize, const K: usize> TGLWE<N, K> {
             .collect::<Vec<T64>>();
 
         TLWE(GLWE(TR(new_a), self.0 .1.coeffs()[h]))
+    }
+    pub fn left_rotate(&self, h: usize) -> Self {
+        dbg!(&h);
+        let (a, b): (TR<Tn<N>, K>, Tn<N>) = (self.0 .0.clone(), self.0 .1);
+        Self(GLWE(a.left_rotate(h), b.left_rotate(h)))
     }
 }
 
@@ -291,13 +299,14 @@ mod tests {
         const T: u64 = 128; // msg space (msg modulus)
         const N: usize = 64;
         const K: usize = 16;
+        const KN: usize = K * N;
 
         let mut rng = rand::thread_rng();
         let msg_dist = Uniform::new(0_u64, T);
 
         for _ in 0..20 {
-            let (sk, pk) = TGLWE::<N, K>::new_key::<{ K * N }>(&mut rng)?;
-            let sk_tlwe = sk.to_tlwe::<{ K * N }>();
+            let (sk, pk) = TGLWE::<N, K>::new_key::<KN>(&mut rng)?;
+            let sk_tlwe = sk.to_tlwe::<KN>();
 
             let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
             let p: Tn<N> = TGLWE::<N, K>::encode::<T>(&m);
@@ -305,10 +314,10 @@ mod tests {
             let c = TGLWE::<N, K>::encrypt(&mut rng, &pk, &p)?;
 
             for h in 0..N {
-                let c_h: TLWE<K> = c.sample_extraction(h);
+                let c_h: TLWE<KN> = c.sample_extraction(h);
 
                 let p_recovered = c_h.decrypt(&sk_tlwe);
-                let m_recovered = TLWE::<K>::decode::<T>(&p_recovered);
+                let m_recovered = TLWE::<KN>::decode::<T>(&p_recovered);
                 assert_eq!(m.coeffs()[h], m_recovered.coeffs()[0]);
             }
         }

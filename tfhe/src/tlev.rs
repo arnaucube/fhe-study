@@ -6,6 +6,7 @@ use std::ops::{Add, Mul};
 
 use arith::{Ring, Rq, Tn, T64, TR};
 
+use crate::tglwe::TGLWE;
 use crate::tlwe::{PublicKey, SecretKey, TLWE};
 
 #[derive(Clone, Debug)]

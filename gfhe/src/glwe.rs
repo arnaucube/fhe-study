@@ -33,6 +33,9 @@ impl<R: Ring, const K: usize> GLWE<R, K> {
     pub fn zero() -> Self {
         Self(TR::zero(), R::zero())
     }
+    pub fn from_plaintext(p: R) -> Self {
+        Self(TR::zero(), p)
+    }
 
     pub fn new_key(mut rng: impl Rng) -> Result<(SecretKey<R, K>, PublicKey<R, K>)> {
         let Xi_key = Uniform::new(0_f64, 2_f64);

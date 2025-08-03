@@ -7,7 +7,10 @@ use std::ops::{Add, Mul};
 use arith::{Ring, Rq, Tn, T64, TR};
 
 use crate::tlev::TLev;
-use crate::tlwe::{PublicKey, SecretKey, TLWE};
+use crate::{
+    tglwe::TGLWE,
+    tlwe::{PublicKey, SecretKey, TLWE},
+};
 use gfhe::glwe::GLWE;
 
 /// vector of length K+1 = [K], [1]
