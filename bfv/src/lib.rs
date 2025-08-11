@@ -16,6 +16,14 @@ use arith::{Ring, Rq, R};
 // sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5
 const ERR_SIGMA: f64 = 3.2;
 
+#[derive(Clone, Copy, Debug)]
+pub struct Params {
+    q: u64,
+    n: usize,
+    t: u64,
+    p: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct SecretKey(Rq);
 
@@ -92,12 +100,6 @@ impl ops::Add<&Rq> for &RLWE {
     }
 }
 
-pub struct Params {
-    q: u64,
-    n: usize,
-    t: u64,
-    p: u64,
-}
 pub struct BFV {}
 
 impl BFV {
