@@ -1,34 +1,68 @@
 //! Implementation of the NTT & iNTT, following the CT & GS algorighms, more details in
 //! https://eprint.iacr.org/2017/727.pdf, some notes at
 //! https://github.com/arnaucube/math/blob/master/notes_ntt.pdf .
-use crate::zq::Zq;
+//!
+//! NOTE: initially I implemented it with fixed Q & N, given as constant
+//! generics; but once using real-world parameters, the stack could not handle
+//! it, so moved to use Vec instead of fixed-sized arrays, and adapted the NTT
+//! implementation to that too.
+use crate::{ring::Ring, ring_nq::Rq, zq::Zq};
+
+use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct NTT<const Q: u64, const N: usize> {}
+pub struct NTT {}
 
-impl<const Q: u64, const N: usize> NTT<Q, N> {
-    const N_INV: Zq<Q> = Zq(const_inv_mod::<Q>(N as u64));
-    // since we work over Zq[X]/(X^N+1) (negacyclic), get the 2*N-th root of unity
-    pub(crate) const ROOT_OF_UNITY: u64 = primitive_root_of_unity::<Q>(2 * N);
-    pub(crate) const ROOTS_OF_UNITY: [Zq<Q>; N] = roots_of_unity(Self::ROOT_OF_UNITY);
-    const ROOTS_OF_UNITY_INV: [Zq<Q>; N] = roots_of_unity_inv(Self::ROOTS_OF_UNITY);
+use std::sync::{Mutex, OnceLock};
+
+static CACHE: OnceLock<Mutex<HashMap<(u64, usize), (Vec<Zq>, Vec<Zq>, Zq)>>> = OnceLock::new();
+
+fn roots(q: u64, n: usize) -> (Vec<Zq>, Vec<Zq>, Zq) {
+    // Initialize CACHE with an empty HashMap on first use
+    let cache_lock = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    // Lock the HashMap for this thread
+    let mut cache = cache_lock.lock().unwrap();
+
+    if let Some(value) = cache.get(&(q, n)) {
+        // Found an existing value — return a clone
+        return value.clone();
+    }
+
+    // Not found — compute the new triple
+    let n_inv: Zq = Zq {
+        q,
+        v: const_inv_mod(q, n as u64),
+    };
+    let root_of_unity: u64 = primitive_root_of_unity(q, 2 * n);
+    let roots_of_unity: Vec<Zq> = roots_of_unity(q, n, root_of_unity);
+    let roots_of_unity_inv: Vec<Zq> = roots_of_unity_inv(q, n, roots_of_unity.clone());
+
+    let value = (roots_of_unity, roots_of_unity_inv, n_inv);
+
+    // Store and return
+    cache.insert((q, n), value.clone());
+    value
 }
 
-impl<const Q: u64, const N: usize> NTT<Q, N> {
+impl NTT {
     /// implements the Cooley-Tukey (CT) algorithm. Details at
     /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.1 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
-    pub fn ntt(a: [Zq<Q>; N]) -> [Zq<Q>; N] {
-        let mut t = N / 2;
+    pub fn ntt(a: &Rq) -> Rq {
+        let (q, n) = (a.q, a.n);
+        let (roots_of_unity, _, _) = roots(q, n);
+
+        let mut t = n / 2;
         let mut m = 1;
-        let mut r: [Zq<Q>; N] = a.clone();
-        while m < N {
+        let mut r: Vec<Zq> = a.coeffs.clone();
+        while m < n {
             let mut k = 0;
             for i in 0..m {
-                let S: Zq<Q> = Self::ROOTS_OF_UNITY[m + i];
+                let S: Zq = roots_of_unity[m + i];
                 for j in k..k + t {
-                    let U: Zq<Q> = r[j];
-                    let V: Zq<Q> = r[j + t] * S;
+                    let U: Zq = r[j];
+                    let V: Zq = r[j + t] * S;
                     r[j] = U + V;
                     r[j + t] = U - V;
                 }
@@ -37,23 +71,32 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
             t /= 2;
             m *= 2;
         }
-        r
+        // Rq::from_vec((a.q, n), r)
+        Rq {
+            q,
+            n,
+            coeffs: r,
+            evals: None,
+        }
     }
 
     /// implements the Cooley-Tukey (CT) algorithm. Details at
     /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.2 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
-    pub fn intt(a: [Zq<Q>; N]) -> [Zq<Q>; N] {
+    pub fn intt(a: &Rq) -> Rq {
+        let (q, n) = (a.q, a.n);
+        let (_, roots_of_unity_inv, n_inv) = roots(q, n);
+
         let mut t = 1;
-        let mut m = N / 2;
-        let mut r: [Zq<Q>; N] = a.clone();
+        let mut m = n / 2;
+        let mut r: Vec<Zq> = a.coeffs.clone();
         while m > 0 {
             let mut k = 0;
             for i in 0..m {
-                let S: Zq<Q> = Self::ROOTS_OF_UNITY_INV[m + i];
+                let S: Zq = roots_of_unity_inv[m + i];
                 for j in k..k + t {
-                    let U: Zq<Q> = r[j];
-                    let V: Zq<Q> = r[j + t];
+                    let U: Zq = r[j];
+                    let V: Zq = r[j + t];
                     r[j] = U + V;
                     r[j + t] = (U - V) * S;
                 }
@@ -62,26 +105,32 @@ impl<const Q: u64, const N: usize> NTT<Q, N> {
             t *= 2;
             m /= 2;
         }
-        for i in 0..N {
-            r[i] = r[i] * Self::N_INV;
+        for i in 0..n {
+            r[i] = r[i] * n_inv;
         }
-        r
+        // Rq::from_vec((a.q, n), r)
+        Rq {
+            q,
+            n,
+            coeffs: r,
+            evals: None,
+        }
     }
 }
 
 /// computes a primitive N-th root of unity using the method described by Thomas
 /// Pornin in https://crypto.stackexchange.com/a/63616
-const fn primitive_root_of_unity<const Q: u64>(N: usize) -> u64 {
-    assert!(N.is_power_of_two());
-    assert!((Q - 1) % N as u64 == 0);
+const fn primitive_root_of_unity(q: u64, n: usize) -> u64 {
+    assert!(n.is_power_of_two());
+    assert!((q - 1) % n as u64 == 0);
+    let n_u64 = n as u64;
 
-    let n: u64 = N as u64;
     let mut k = 1;
-    while k < Q {
+    while k < q {
         // alternatively could get a random k at each iteration, if so, add the following if:
         // `if k == 0 { continue; }`
-        let w = const_exp_mod::<Q>(k, (Q - 1) / n);
-        if const_exp_mod::<Q>(w, n / 2) != 1 {
+        let w = const_exp_mod(q, k, (q - 1) / n_u64);
+        if const_exp_mod(q, w, n_u64 / 2) != 1 {
             return w; // w is a primitive N-th root of unity
         }
         k += 1;
@@ -89,52 +138,58 @@ const fn primitive_root_of_unity<const Q: u64>(N: usize) -> u64 {
     panic!("No primitive root of unity");
 }
 
-const fn roots_of_unity<const Q: u64, const N: usize>(w: u64) -> [Zq<Q>; N] {
-    let mut r: [Zq<Q>; N] = [Zq(0u64); N];
+fn roots_of_unity(q: u64, n: usize, w: u64) -> Vec<Zq> {
+    let mut r: Vec<Zq> = vec![Zq { q, v: 0 }; n];
     let mut i = 0;
-    let log_n = N.ilog2();
-    while i < N {
+    let log_n = n.ilog2();
+    while i < n {
         // (return the roots in bit-reverset order)
         let j = ((i as u64).reverse_bits() >> (64 - log_n)) as usize;
-        r[i] = Zq(const_exp_mod::<Q>(w, j as u64));
+        r[i] = Zq {
+            q,
+            v: const_exp_mod(q, w, j as u64),
+        };
         i += 1;
     }
     r
 }
 
-const fn roots_of_unity_inv<const Q: u64, const N: usize>(v: [Zq<Q>; N]) -> [Zq<Q>; N] {
+fn roots_of_unity_inv(q: u64, n: usize, v: Vec<Zq>) -> Vec<Zq> {
     // assumes that the inputted roots are already in bit-reverset order
-    let mut r: [Zq<Q>; N] = [Zq(0u64); N];
+    let mut r: Vec<Zq> = vec![Zq { q, v: 0 }; n];
     let mut i = 0;
-    while i < N {
-        r[i] = Zq(const_inv_mod::<Q>(v[i].0));
+    while i < n {
+        r[i] = Zq {
+            q,
+            v: const_inv_mod(q, v[i].v),
+        };
         i += 1;
     }
     r
 }
 
 /// returns x^k mod Q
-const fn const_exp_mod<const Q: u64>(x: u64, k: u64) -> u64 {
+const fn const_exp_mod(q: u64, x: u64, k: u64) -> u64 {
     // work on u128 to avoid overflow
     let mut r = 1u128;
     let mut x = x as u128;
     let mut k = k as u128;
-    x = x % Q as u128;
+    x = x % q as u128;
     // exponentiation by square strategy
     while k > 0 {
         if k % 2 == 1 {
-            r = (r * x) % Q as u128;
+            r = (r * x) % q as u128;
         }
-        x = (x * x) % Q as u128;
+        x = (x * x) % q as u128;
         k /= 2;
     }
     r as u64
 }
 
 /// returns x^-1 mod Q
-const fn const_inv_mod<const Q: u64>(x: u64) -> u64 {
+const fn const_inv_mod(q: u64, x: u64) -> u64 {
     // by Fermat's Little Theorem, x^-1 mod q \equiv  x^{q-2} mod q
-    const_exp_mod::<Q>(x, Q - 2)
+    const_exp_mod(q, x, q - 2)
 }
 
 #[cfg(test)]
@@ -142,25 +197,24 @@ mod tests {
     use super::*;
 
     use anyhow::Result;
-    use std::array;
 
     #[test]
     fn test_ntt() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 4;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 4;
 
-        let a: [u64; N] = [1u64, 2, 3, 4];
-        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
+        let a: Vec<u64> = vec![1u64, 2, 3, 4];
+        let a: Rq = Rq::from_vec_u64(q, n, a);
 
-        let a_ntt = NTT::<Q, N>::ntt(a);
+        let a_ntt = NTT::ntt(&a);
 
-        let a_intt = NTT::<Q, N>::intt(a_ntt);
+        let a_intt = NTT::intt(&a_ntt);
 
         dbg!(&a);
         dbg!(&a_ntt);
         dbg!(&a_intt);
-        dbg!(NTT::<Q, N>::ROOT_OF_UNITY);
-        dbg!(NTT::<Q, N>::ROOTS_OF_UNITY);
+        // dbg!(NTT::ROOT_OF_UNITY);
+        // dbg!(NTT::ROOTS_OF_UNITY);
 
         assert_eq!(a, a_intt);
         Ok(())
@@ -168,18 +222,17 @@ mod tests {
 
     #[test]
     fn test_ntt_loop() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 512;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 512;
 
-        use rand::distributions::Distribution;
         use rand::distributions::Uniform;
         let mut rng = rand::thread_rng();
-        let dist = Uniform::new(0_f64, Q as f64);
+        let dist = Uniform::new(0_f64, q as f64);
 
-        for _ in 0..100 {
-            let a: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));
-            let a_ntt = NTT::<Q, N>::ntt(a);
-            let a_intt = NTT::<Q, N>::intt(a_ntt);
+        for _ in 0..10_000 {
+            let a: Rq = Rq::rand(&mut rng, dist, (q, n));
+            let a_ntt = NTT::ntt(&a);
+            let a_intt = NTT::intt(&a_ntt);
             assert_eq!(a, a_intt);
         }
         Ok(())

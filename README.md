@@ -62,7 +62,7 @@ let m4 = S::decode::<T>(&p4_recovered);
 	- external products of ciphertexts
 		- TGSW x TLWE
 		- TGGSW x TGLWE
-	- TGSW & TGGSW CMux gate
+	- {TGSW, TGGSW} CMux gate
 	- blind rotation, key switching, mod switching
 	- bootstrapping
 - CKKS

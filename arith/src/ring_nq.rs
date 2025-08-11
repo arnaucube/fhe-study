@@ -2,8 +2,10 @@
 //!
 
 use anyhow::{anyhow, Result};
+use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
 use std::array;
+use std::borrow::Borrow;
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
@@ -18,75 +20,91 @@ use crate::Ring;
 // use Vec.
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
-#[derive(Clone, Copy)]
-pub struct Rq<const Q: u64, const N: usize> {
-    pub(crate) coeffs: [Zq<Q>; N],
+#[derive(Clone)]
+pub struct Rq {
+    pub(crate) q: u64, // TODO think if really needed or it's fine with coeffs[0].q
+    pub(crate) n: usize,
+
+    pub(crate) coeffs: Vec<Zq>,
 
     // evals are set when doig a PRxPR multiplication, so it can be reused in future
     // multiplications avoiding recomputing it
-    pub(crate) evals: Option<[Zq<Q>; N]>,
+    pub(crate) evals: Option<Vec<Zq>>,
 }
 
-impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
-    type C = Zq<Q>;
-
-    const Q: u64 = Q;
-    const N: usize = N;
+impl Ring for Rq {
+    type C = Zq;
+    type Params = (u64, usize);
 
     fn coeffs(&self) -> Vec<Self::C> {
         self.coeffs.to_vec()
     }
-    fn zero() -> Self {
-        let coeffs = array::from_fn(|_| Zq::zero());
+    // fn zero(q: u64, n: usize) -> Self {
+    fn zero(param: (u64, usize)) -> Self {
+        let (q, n) = param;
         Self {
-            coeffs,
+            q,
+            n,
+            coeffs: vec![Zq::zero(q); n],
             evals: None,
         }
     }
-    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, params: Self::Params) -> Self {
         // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
+        let (q, n) = params;
         Self {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Self::C::rand(&mut rng, &dist, q))
+                .take(n)
+                .collect(),
             evals: None,
         }
     }
 
-    fn from_vec(coeffs: Vec<Zq<Q>>) -> Self {
+    fn from_vec(params: Self::Params, coeffs: Vec<Zq>) -> Self {
+        let (q, n) = params;
         let mut p = coeffs;
-        modulus::<Q, N>(&mut p);
-        let coeffs = array::from_fn(|i| p[i]);
+        modulus(q, n, &mut p);
         Self {
-            coeffs,
+            q,
+            n,
+            coeffs: p,
             evals: None,
         }
     }
 
     // returns the decomposition of each polynomial coefficient, such
-    // decomposition will be a vecotor of length N, containint N vectors of Zq
+    // decomposition will be a vector of length N, containing N vectors of Zq
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
-        let elems: Vec<Vec<Zq<Q>>> = self.coeffs.iter().map(|r| r.decompose(beta, l)).collect();
+        let elems: Vec<Vec<Zq>> = self.coeffs.iter().map(|r| r.decompose(beta, l)).collect();
         // transpose it
-        let r: Vec<Vec<Zq<Q>>> = (0..elems[0].len())
+        let r: Vec<Vec<Zq>> = (0..elems[0].len())
             .map(|i| (0..elems.len()).map(|j| elems[j][i]).collect())
             .collect();
         // convert it to Rq<Q,N>
-        r.iter().map(|a_i| Self::from_vec(a_i.clone())).collect()
+        r.iter()
+            .map(|a_i| Self::from_vec((self.q, self.n), a_i.clone()))
+            .collect()
     }
 
     // Warning: this method will behave differently depending on the values P and Q:
     // if Q<P, it just 'renames' the modulus parameter to P
     // if Q>=P, it crops to mod P
-    fn remodule<const P: u64>(&self) -> Rq<P, N> {
-        Rq::<P, N>::from_vec_u64(self.coeffs().iter().map(|m_i| m_i.0).collect())
+    fn remodule(&self, p: u64) -> Rq {
+        Rq::from_vec_u64(p, self.n, self.coeffs().iter().map(|m_i| m_i.v).collect())
     }
 
     /// perform the mod switch operation from Q to Q', where Q2=Q'
     // fn mod_switch<const P: u64, const M: usize>(&self) -> impl Ring {
-    fn mod_switch<const P: u64>(&self) -> Rq<P, N> {
+    fn mod_switch(&self, p: u64) -> Rq {
         // assert_eq!(N, M); // sanity check
-        Rq::<P, N> {
-            coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<P>()),
+        Rq {
+            q: p,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<P>()),
+            coeffs: self.coeffs.iter().map(|c_i| c_i.mod_switch(p)).collect(),
             evals: None,
         }
     }
@@ -98,45 +116,49 @@ impl<const Q: u64, const N: usize> Ring for Rq<Q, N> {
         let r: Vec<f64> = self
             .coeffs()
             .iter()
-            .map(|e| ((num as f64 * e.0 as f64) / den as f64).round())
+            .map(|e| ((num as f64 * e.v as f64) / den as f64).round())
             .collect();
-        Rq::<Q, N>::from_vec_f64(r)
+        Rq::from_vec_f64(self.q, self.n, r)
     }
 }
 
-impl<const Q: u64, const N: usize> From<crate::ring_n::R<N>> for Rq<Q, N> {
-    fn from(r: crate::ring_n::R<N>) -> Self {
+impl From<(u64, crate::ring_n::R)> for Rq {
+    fn from(qr: (u64, crate::ring_n::R)) -> Self {
+        let (q, r) = qr;
+        assert_eq!(r.n, r.coeffs.len());
+
         Self::from_vec(
+            (q, r.n),
             r.coeffs()
                 .iter()
-                .map(|e| Zq::<Q>::from_f64(*e as f64))
+                .map(|e| Zq::from_f64(q, *e as f64))
                 .collect(),
         )
     }
 }
 
 // apply mod (X^N+1)
-pub fn modulus<const Q: u64, const N: usize>(p: &mut Vec<Zq<Q>>) {
-    if p.len() < N {
+pub fn modulus(q: u64, n: usize, p: &mut Vec<Zq>) {
+    if p.len() < n {
         return;
     }
-    for i in N..p.len() {
-        p[i - N] = p[i - N].clone() - p[i].clone();
-        p[i] = Zq(0);
+    for i in n..p.len() {
+        p[i - n] = p[i - n].clone() - p[i].clone();
+        p[i] = Zq::zero(q);
     }
-    p.truncate(N);
+    p.truncate(n);
 }
 
-// PR stands for PolynomialRing
-impl<const Q: u64, const N: usize> Rq<Q, N> {
-    pub fn coeffs(&self) -> [Zq<Q>; N] {
-        self.coeffs
+impl Rq {
+    pub fn coeffs(&self) -> Vec<Zq> {
+        self.coeffs.clone()
     }
     pub fn compute_evals(&mut self) {
-        self.evals = Some(NTT::<Q, N>::ntt(self.coeffs));
+        self.evals = Some(NTT::ntt(self).coeffs); // TODO improve, ntt returns Rq but here
+                                                  // just needs Vec<Zq>
     }
-    pub fn to_r(self) -> crate::R<N> {
-        crate::R::<N>::from(self)
+    pub fn to_r(self) -> crate::R {
+        crate::R::from(self)
     }
 
     // TODO rm since it is implemented in Ring trait impl
@@ -148,55 +170,105 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     //     }
     // }
     // this method is mostly for tests
-    pub fn from_vec_u64(coeffs: Vec<u64>) -> Self {
-        let coeffs_mod_q = coeffs.iter().map(|c| Zq::from_u64(*c)).collect();
-        Self::from_vec(coeffs_mod_q)
+    pub fn from_vec_u64(q: u64, n: usize, coeffs: Vec<u64>) -> Self {
+        let coeffs_mod_q: Vec<Zq> = coeffs.iter().map(|c| Zq::from_u64(q, *c)).collect();
+        Self::from_vec((q, n), coeffs_mod_q)
     }
-    pub fn from_vec_f64(coeffs: Vec<f64>) -> Self {
-        let coeffs_mod_q = coeffs.iter().map(|c| Zq::from_f64(*c)).collect();
-        Self::from_vec(coeffs_mod_q)
+    pub fn from_vec_f64(q: u64, n: usize, coeffs: Vec<f64>) -> Self {
+        let coeffs_mod_q: Vec<Zq> = coeffs.iter().map(|c| Zq::from_f64(q, *c)).collect();
+        Self::from_vec((q, n), coeffs_mod_q)
     }
-    pub fn from_vec_i64(coeffs: Vec<i64>) -> Self {
-        let coeffs_mod_q = coeffs.iter().map(|c| Zq::from_f64(*c as f64)).collect();
-        Self::from_vec(coeffs_mod_q)
+    pub fn from_vec_i64(q: u64, n: usize, coeffs: Vec<i64>) -> Self {
+        let coeffs_mod_q: Vec<Zq> = coeffs.iter().map(|c| Zq::from_f64(q, *c as f64)).collect();
+        Self::from_vec((q, n), coeffs_mod_q)
     }
-    pub fn new(coeffs: [Zq<Q>; N], evals: Option<[Zq<Q>; N]>) -> Self {
-        Self { coeffs, evals }
+    pub fn new(q: u64, n: usize, coeffs: Vec<Zq>, evals: Option<Vec<Zq>>) -> Self {
+        Self {
+            q,
+            n,
+            coeffs,
+            evals,
+        }
     }
 
-    pub fn rand_abs(mut rng: impl Rng, dist: impl Distribution<f64>) -> Result<Self> {
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
+    pub fn rand_abs(
+        mut rng: impl Rng,
+        dist: impl Distribution<f64>,
+        q: u64,
+        n: usize,
+    ) -> Result<Self> {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
         Ok(Self {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Zq::from_f64(q, dist.sample(&mut rng).abs()))
+                .take(n)
+                .collect(),
             evals: None,
         })
     }
-    pub fn rand_f64_abs(mut rng: impl Rng, dist: impl Distribution<f64>) -> Result<Self> {
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
+    pub fn rand_f64_abs(
+        mut rng: impl Rng,
+        dist: impl Distribution<f64>,
+        q: u64,
+        n: usize,
+    ) -> Result<Self> {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
         Ok(Self {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Zq::from_f64(q, dist.sample(&mut rng).abs()))
+                .take(n)
+                .collect(),
             evals: None,
         })
     }
-    pub fn rand_f64(mut rng: impl Rng, dist: impl Distribution<f64>) -> Result<Self> {
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));
+    pub fn rand_f64(
+        mut rng: impl Rng,
+        dist: impl Distribution<f64>,
+        q: u64,
+        n: usize,
+    ) -> Result<Self> {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));
         Ok(Self {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Zq::from_f64(q, dist.sample(&mut rng)))
+                .take(n)
+                .collect(),
             evals: None,
         })
     }
-    pub fn rand_u64(mut rng: impl Rng, dist: impl Distribution<u64>) -> Result<Self> {
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
+    pub fn rand_u64(
+        mut rng: impl Rng,
+        dist: impl Distribution<u64>,
+        q: u64,
+        n: usize,
+    ) -> Result<Self> {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
         Ok(Self {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Zq::from_u64(q, dist.sample(&mut rng)))
+                .take(n)
+                .collect(),
             evals: None,
         })
     }
     // WIP. returns random v \in {0,1}. // TODO {-1, 0, 1}
-    pub fn rand_bin(mut rng: impl Rng, dist: impl Distribution<bool>) -> Result<Self> {
-        let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_bool(dist.sample(&mut rng)));
+    pub fn rand_bin(
+        mut rng: impl Rng,
+        dist: impl Distribution<bool>,
+        q: u64,
+        n: usize,
+    ) -> Result<Self> {
+        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_bool(dist.sample(&mut rng)));
         Ok(Rq {
-            coeffs,
+            q,
+            n,
+            coeffs: std::iter::repeat_with(|| Zq::from_bool(q, dist.sample(&mut rng)))
+                .take(n)
+                .collect(),
             evals: None,
         })
     }
@@ -208,36 +280,50 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     // }
 
     // applies mod(T) to all coefficients of self
-    pub fn coeffs_mod<const T: u64>(&self) -> Self {
-        Rq::<Q, N>::from_vec_u64(
+    pub fn coeffs_mod<const T: u64>(&self, q: u64, n: usize, t: u64) -> Self {
+        Rq::from_vec_u64(
+            q,
+            n,
             self.coeffs()
                 .iter()
-                .map(|m_i| modulus_u64::<T>(m_i.0))
+                .map(|m_i| modulus_u64(t, m_i.v))
                 .collect(),
         )
     }
 
     // TODO review if needed, or if with this interface
-    pub fn mul_by_matrix(&self, m: &Vec<Vec<Zq<Q>>>) -> Result<Vec<Zq<Q>>> {
+    pub fn mul_by_matrix(&self, m: &Vec<Vec<Zq>>) -> Result<Vec<Zq>> {
         matrix_vec_product(m, &self.coeffs.to_vec())
     }
-    pub fn mul_by_zq(&self, s: &Zq<Q>) -> Self {
+    pub fn mul_by_zq(&self, s: &Zq) -> Self {
         Self {
-            coeffs: array::from_fn(|i| self.coeffs[i] * *s),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] * *s),
+            coeffs: self.coeffs.iter().map(|c_i| *c_i * *s).collect(),
             evals: None,
         }
     }
     pub fn mul_by_u64(&self, s: u64) -> Self {
-        let s = Zq::from_u64(s);
+        let s = Zq::from_u64(self.q, s);
         Self {
-            coeffs: array::from_fn(|i| self.coeffs[i] * s),
-            // coeffs: self.coeffs.iter().map(|&e| e * s).collect(),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] * s),
+            coeffs: self.coeffs.iter().map(|&e| e * s).collect(),
             evals: None,
         }
     }
     pub fn mul_by_f64(&self, s: f64) -> Self {
         Self {
-            coeffs: array::from_fn(|i| Zq::from_f64(self.coeffs[i].0 as f64 * s)),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| Zq::from_f64(self.coeffs[i].0 as f64 * s)),
+            coeffs: self
+                .coeffs
+                .iter()
+                .map(|c_i| Zq::from_f64(self.q, c_i.v as f64 * s))
+                .collect(),
             evals: None,
         }
     }
@@ -251,9 +337,9 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
         let r: Vec<f64> = self
             .coeffs()
             .iter()
-            .map(|e| (e.0 as f64 / s as f64).round())
+            .map(|e| (e.v as f64 / s as f64).round())
             .collect();
-        Rq::<Q, N>::from_vec_f64(r)
+        Rq::from_vec_f64(self.q, self.n, r)
     }
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -261,19 +347,19 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
         let mut str = "";
         let mut zero = true;
         for (i, coeff) in self.coeffs.iter().enumerate().rev() {
-            if coeff.0 == 0 {
+            if coeff.v == 0 {
                 continue;
             }
             zero = false;
             f.write_str(str)?;
-            if coeff.0 != 1 {
-                f.write_str(coeff.0.to_string().as_str())?;
+            if coeff.v != 1 {
+                f.write_str(coeff.v.to_string().as_str())?;
                 if i > 0 {
                     f.write_str("*")?;
                 }
             }
-            if coeff.0 == 1 && i == 0 {
-                f.write_str(coeff.0.to_string().as_str())?;
+            if coeff.v == 1 && i == 0 {
+                f.write_str(coeff.v.to_string().as_str())?;
             }
             if i == 1 {
                 f.write_str("x")?;
@@ -288,9 +374,9 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
         }
 
         f.write_str(" mod Z_")?;
-        f.write_str(Q.to_string().as_str())?;
+        f.write_str(self.q.to_string().as_str())?;
         f.write_str("/(X^")?;
-        f.write_str(N.to_string().as_str())?;
+        f.write_str(self.n.to_string().as_str())?;
         f.write_str("+1)")?;
         Ok(())
     }
@@ -298,16 +384,20 @@ impl<const Q: u64, const N: usize> Rq<Q, N> {
     pub fn infinity_norm(&self) -> u64 {
         self.coeffs()
             .iter()
-            .map(|x| if x.0 > (Q / 2) { Q - x.0 } else { x.0 })
+            .map(|x| {
+                if x.v > (self.q / 2) {
+                    self.q - x.v
+                } else {
+                    x.v
+                }
+            })
             .fold(0, |a, b| a.max(b))
     }
-    pub fn mod_centered_q(&self) -> crate::ring_n::R<N> {
-        self.to_r().mod_centered_q::<Q>()
+    pub fn mod_centered_q(&self) -> crate::ring_n::R {
+        self.clone().to_r().mod_centered_q(self.q)
     }
 }
-pub fn matrix_vec_product<const Q: u64>(m: &Vec<Vec<Zq<Q>>>, v: &Vec<Zq<Q>>) -> Result<Vec<Zq<Q>>> {
-    // assert_eq!(m.len(), m[0].len()); // TODO change to returning err
-    // assert_eq!(m.len(), v.len());
+pub fn matrix_vec_product(m: &Vec<Vec<Zq>>, v: &Vec<Zq>) -> Result<Vec<Zq>> {
     if m.len() != m[0].len() {
         return Err(anyhow!("expected 'm' to be a square matrix"));
     }
@@ -319,6 +409,8 @@ pub fn matrix_vec_product<const Q: u64>(m: &Vec<Vec<Zq<Q>>>, v: &Vec<Zq<Q>>) -> 
         ));
     }
 
+    assert_eq!(m[0][0].q, v[0].q); // TODO change to returning err
+
     Ok(m.iter()
         .map(|row| {
             row.iter()
@@ -326,12 +418,15 @@ pub fn matrix_vec_product<const Q: u64>(m: &Vec<Vec<Zq<Q>>>, v: &Vec<Zq<Q>>) -> 
                 .map(|(&row_i, &v_i)| row_i * v_i)
                 .sum()
         })
-        .collect::<Vec<Zq<Q>>>())
+        .collect::<Vec<Zq>>())
 }
-pub fn transpose<const Q: u64>(m: &[Vec<Zq<Q>>]) -> Vec<Vec<Zq<Q>>> {
+pub fn transpose(m: &[Vec<Zq>]) -> Vec<Vec<Zq>> {
+    assert!(m.len() > 0);
+    assert!(m[0].len() > 0);
+    let q = m[0][0].q;
     // TODO case when m[0].len()=0
     // TODO non square matrix
-    let mut r: Vec<Vec<Zq<Q>>> = vec![vec![Zq(0); m[0].len()]; m.len()];
+    let mut r: Vec<Vec<Zq>> = vec![vec![Zq::zero(q); m[0].len()]; m.len()];
     for (i, m_row) in m.iter().enumerate() {
         for (j, m_ij) in m_row.iter().enumerate() {
             r[j][i] = *m_ij;
@@ -340,17 +435,24 @@ pub fn transpose<const Q: u64>(m: &[Vec<Zq<Q>>]) -> Vec<Vec<Zq<Q>>> {
     r
 }
 
-impl<const Q: u64, const N: usize> PartialEq for Rq<Q, N> {
+impl PartialEq for Rq {
     fn eq(&self, other: &Self) -> bool {
-        self.coeffs == other.coeffs
+        self.coeffs == other.coeffs && self.q == other.q && self.n == other.n
     }
 }
-impl<const Q: u64, const N: usize> Add<Rq<Q, N>> for Rq<Q, N> {
+impl Add<Rq> for Rq {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
+        assert_eq!(self.q, rhs.q);
+        assert_eq!(self.n, rhs.n);
         Self {
-            coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
+            coeffs: zip_eq(self.coeffs, rhs.coeffs)
+                .map(|(l, r)| l + r)
+                .collect(),
             evals: None,
         }
         // Self {
@@ -365,180 +467,227 @@ impl<const Q: u64, const N: usize> Add<Rq<Q, N>> for Rq<Q, N> {
         // Self(r.iter_mut().map(|e| e.r#mod()).collect()) // TODO mod should happen auto in +
     }
 }
-impl<const Q: u64, const N: usize> Add<&Rq<Q, N>> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Add<&Rq> for &Rq {
+    type Output = Rq;
 
-    fn add(self, rhs: &Rq<Q, N>) -> Self::Output {
+    fn add(self, rhs: &Rq) -> Self::Output {
+        assert_eq!(self.q, rhs.q);
+        assert_eq!(self.n, rhs.n);
         Rq {
-            coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
+            coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
+                .map(|(l, r)| l + r)
+                .collect(),
             evals: None,
         }
     }
 }
-impl<const Q: u64, const N: usize> AddAssign for Rq<Q, N> {
+impl AddAssign for Rq {
     fn add_assign(&mut self, rhs: Self) {
-        for i in 0..N {
+        debug_assert_eq!(self.q, rhs.q);
+        debug_assert_eq!(self.n, rhs.n);
+        for i in 0..self.n {
             self.coeffs[i] += rhs.coeffs[i];
         }
     }
 }
 
-impl<const Q: u64, const N: usize> Sum<Rq<Q, N>> for Rq<Q, N> {
-    fn sum<I>(iter: I) -> Self
+impl Sum<Rq> for Rq {
+    fn sum<I>(mut iter: I) -> Self
     where
         I: Iterator<Item = Self>,
     {
-        let mut acc = Rq::<Q, N>::zero();
-        for e in iter {
-            acc += e;
-        }
-        acc
+        // let mut acc = Rq::zero();
+        // for e in iter {
+        //     acc += e;
+        // }
+        // acc
+        let first = iter.next().unwrap();
+        iter.fold(first, |acc, x| acc + x)
     }
 }
 
-impl<const Q: u64, const N: usize> Sub<Rq<Q, N>> for Rq<Q, N> {
+impl Sub<Rq> for Rq {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
+        assert_eq!(self.q, rhs.q);
+        assert_eq!(self.n, rhs.n);
         Self {
-            coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
+            coeffs: zip_eq(self.coeffs, rhs.coeffs)
+                .map(|(l, r)| l - r)
+                .collect(),
             evals: None,
         }
     }
 }
-impl<const Q: u64, const N: usize> Sub<&Rq<Q, N>> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Sub<&Rq> for &Rq {
+    type Output = Rq;
 
-    fn sub(self, rhs: &Rq<Q, N>) -> Self::Output {
+    fn sub(self, rhs: &Rq) -> Self::Output {
+        assert_eq!(self.q, rhs.q); // TODO replace all those with debug_assert_eq
+        debug_assert_eq!(self.n, rhs.n);
         Rq {
-            coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
+            coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
+                .map(|(l, r)| l - r)
+                .collect(),
             evals: None,
         }
     }
 }
-impl<const Q: u64, const N: usize> SubAssign for Rq<Q, N> {
+impl SubAssign for Rq {
     fn sub_assign(&mut self, rhs: Self) {
-        for i in 0..N {
+        debug_assert_eq!(self.q, rhs.q);
+        debug_assert_eq!(self.n, rhs.n);
+        for i in 0..self.n {
             self.coeffs[i] -= rhs.coeffs[i];
         }
     }
 }
 
-impl<const Q: u64, const N: usize> Mul<Rq<Q, N>> for Rq<Q, N> {
+impl Mul<Rq> for Rq {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         mul(&self, &rhs)
     }
 }
-impl<const Q: u64, const N: usize> Mul<&Rq<Q, N>> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Mul<&Rq> for &Rq {
+    type Output = Rq;
 
-    fn mul(self, rhs: &Rq<Q, N>) -> Self::Output {
+    fn mul(self, rhs: &Rq) -> Self::Output {
         mul(self, rhs)
     }
 }
 
 // mul by Zq element
-impl<const Q: u64, const N: usize> Mul<Zq<Q>> for Rq<Q, N> {
+impl Mul<Zq> for Rq {
     type Output = Self;
 
-    fn mul(self, s: Zq<Q>) -> Self {
+    fn mul(self, s: Zq) -> Self {
         self.mul_by_zq(&s)
     }
 }
-impl<const Q: u64, const N: usize> Mul<&Zq<Q>> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Mul<&Zq> for &Rq {
+    type Output = Rq;
 
-    fn mul(self, s: &Zq<Q>) -> Self::Output {
+    fn mul(self, s: &Zq) -> Self::Output {
         self.mul_by_zq(s)
     }
 }
 // mul by u64
-impl<const Q: u64, const N: usize> Mul<u64> for Rq<Q, N> {
+impl Mul<u64> for Rq {
     type Output = Self;
 
     fn mul(self, s: u64) -> Self {
         self.mul_by_u64(s)
     }
 }
-impl<const Q: u64, const N: usize> Mul<&u64> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Mul<&u64> for &Rq {
+    type Output = Rq;
 
     fn mul(self, s: &u64) -> Self::Output {
         self.mul_by_u64(*s)
     }
 }
 // mul by f64
-impl<const Q: u64, const N: usize> Mul<f64> for Rq<Q, N> {
+impl Mul<f64> for Rq {
     type Output = Self;
 
     fn mul(self, s: f64) -> Self {
         self.mul_by_f64(s)
     }
 }
-impl<const Q: u64, const N: usize> Mul<&f64> for &Rq<Q, N> {
-    type Output = Rq<Q, N>;
+impl Mul<&f64> for &Rq {
+    type Output = Rq;
 
     fn mul(self, s: &f64) -> Self::Output {
         self.mul_by_f64(*s)
     }
 }
 
-impl<const Q: u64, const N: usize> Neg for Rq<Q, N> {
+impl Neg for Rq {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
         Self {
-            coeffs: array::from_fn(|i| -self.coeffs[i]),
+            q: self.q,
+            n: self.n,
+            // coeffs: array::from_fn(|i| -self.coeffs[i]),
+            // coeffs: self.coeffs.iter().map(|c_i| -c_i).collect(),
+            coeffs: self.coeffs.iter().map(|c_i| -*c_i).collect(),
             evals: None,
         }
     }
 }
 
 // note: this assumes that Q is prime
-fn mul_mut<const Q: u64, const N: usize>(lhs: &mut Rq<Q, N>, rhs: &mut Rq<Q, N>) -> Rq<Q, N> {
+fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
+    assert_eq!(lhs.q, rhs.q);
+    assert_eq!(lhs.n, rhs.n);
+    let (q, n) = (lhs.q, lhs.n);
+
     // reuse evaluations if already computed
     if !lhs.evals.is_some() {
-        lhs.evals = Some(NTT::<Q, N>::ntt(lhs.coeffs));
+        lhs.evals = Some(NTT::ntt(lhs).coeffs);
     };
     if !rhs.evals.is_some() {
-        rhs.evals = Some(NTT::<Q, N>::ntt(rhs.coeffs));
+        rhs.evals = Some(NTT::ntt(rhs).coeffs);
     };
-    let lhs_evals = lhs.evals.unwrap();
-    let rhs_evals = rhs.evals.unwrap();
+    let lhs_evals = lhs.evals.clone().unwrap();
+    let rhs_evals = rhs.evals.clone().unwrap();
 
-    let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
-    let c = NTT::<Q, { N }>::intt(c_ntt);
-    Rq::new(c, Some(c_ntt))
+    // let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
+    let c_ntt: Rq = Rq::from_vec(
+        (q, n),
+        zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
+    );
+    let c = NTT::intt(&c_ntt);
+    Rq::new(q, n, c.coeffs, Some(c_ntt.coeffs))
 }
 // note: this assumes that Q is prime
 // TODO impl karatsuba for non-prime Q
-fn mul<const Q: u64, const N: usize>(lhs: &Rq<Q, N>, rhs: &Rq<Q, N>) -> Rq<Q, N> {
+fn mul(lhs: &Rq, rhs: &Rq) -> Rq {
+    assert_eq!(lhs.q, rhs.q);
+    assert_eq!(lhs.n, rhs.n);
+    let (q, n) = (lhs.q, lhs.n);
+
     // reuse evaluations if already computed
-    let lhs_evals = if lhs.evals.is_some() {
-        lhs.evals.unwrap()
+    let lhs_evals: Vec<Zq> = if lhs.evals.is_some() {
+        lhs.evals.clone().unwrap()
     } else {
-        NTT::<Q, N>::ntt(lhs.coeffs)
+        NTT::ntt(lhs).coeffs
     };
-    let rhs_evals = if rhs.evals.is_some() {
-        rhs.evals.unwrap()
+    let rhs_evals: Vec<Zq> = if rhs.evals.is_some() {
+        rhs.evals.clone().unwrap()
     } else {
-        NTT::<Q, N>::ntt(rhs.coeffs)
+        NTT::ntt(rhs).coeffs
     };
 
-    let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
-    let c = NTT::<Q, { N }>::intt(c_ntt);
-    Rq::new(c, Some(c_ntt))
+    // let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
+    let c_ntt: Rq = Rq::from_vec(
+        (q, n),
+        zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
+    );
+    let c = NTT::intt(&c_ntt);
+    Rq::new(q, n, c.coeffs, Some(c_ntt.coeffs))
 }
 
-impl<const Q: u64, const N: usize> fmt::Display for Rq<Q, N> {
+impl fmt::Display for Rq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt(f)?;
         Ok(())
     }
 }
-impl<const Q: u64, const N: usize> fmt::Debug for Rq<Q, N> {
+impl fmt::Debug for Rq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt(f)?;
         Ok(())
@@ -552,31 +701,31 @@ mod tests {
     #[test]
     fn test_polynomial_ring() {
         // the test values used are generated with SageMath
-        const Q: u64 = 7;
-        const N: usize = 3;
+        let q: u64 = 7;
+        let n: usize = 3;
 
         // p = 1x + 2x^2 + 3x^3 + 4 x^4 + 5 x^5 in R=Z_q[X]/(X^n +1)
-        let p = Rq::<Q, N>::from_vec_u64(vec![0u64, 1, 2, 3, 4, 5]);
+        let p = Rq::from_vec_u64(q, n, vec![0u64, 1, 2, 3, 4, 5]);
         assert_eq!(p.to_string(), "4*x^2 + 4*x + 4 mod Z_7/(X^3+1)");
 
         // try with coefficients bigger than Q
-        let p = Rq::<Q, N>::from_vec_u64(vec![0u64, 1, Q + 2, 3, 4, 5]);
+        let p = Rq::from_vec_u64(q, n, vec![0u64, 1, q + 2, 3, 4, 5]);
         assert_eq!(p.to_string(), "4*x^2 + 4*x + 4 mod Z_7/(X^3+1)");
 
         // try with other ring
-        let p = Rq::<7, 4>::from_vec_u64(vec![0u64, 1, 2, 3, 4, 5]);
+        let p = Rq::from_vec_u64(7, 4, vec![0u64, 1, 2, 3, 4, 5]);
         assert_eq!(p.to_string(), "3*x^3 + 2*x^2 + 3*x + 3 mod Z_7/(X^4+1)");
 
-        let p = Rq::<Q, N>::from_vec_u64(vec![0u64, 0, 0, 0, 4, 5]);
+        let p = Rq::from_vec_u64(q, n, vec![0u64, 0, 0, 0, 4, 5]);
         assert_eq!(p.to_string(), "2*x^2 + 3*x mod Z_7/(X^3+1)");
 
-        let p = Rq::<Q, N>::from_vec_u64(vec![5u64, 4, 5, 2, 1, 0]);
+        let p = Rq::from_vec_u64(q, n, vec![5u64, 4, 5, 2, 1, 0]);
         assert_eq!(p.to_string(), "5*x^2 + 3*x + 3 mod Z_7/(X^3+1)");
 
-        let a = Rq::<Q, N>::from_vec_u64(vec![0u64, 1, 2, 3, 4, 5]);
+        let a = Rq::from_vec_u64(q, n, vec![0u64, 1, 2, 3, 4, 5]);
         assert_eq!(a.to_string(), "4*x^2 + 4*x + 4 mod Z_7/(X^3+1)");
 
-        let b = Rq::<Q, N>::from_vec_u64(vec![5u64, 4, 3, 2, 1, 0]);
+        let b = Rq::from_vec_u64(q, n, vec![5u64, 4, 3, 2, 1, 0]);
         assert_eq!(b.to_string(), "3*x^2 + 3*x + 3 mod Z_7/(X^3+1)");
 
         // add
@@ -593,34 +742,39 @@ mod tests {
 
     #[test]
     fn test_mul() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 4;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 4;
 
-        let a: [u64; N] = [1u64, 2, 3, 4];
-        let b: [u64; N] = [1u64, 2, 3, 4];
-        let c: [u64; N] = [65513, 65517, 65531, 20];
-        test_mul_opt::<Q, N>(a, b, c)?;
+        let a: Vec<u64> = vec![1u64, 2, 3, 4];
+        let b: Vec<u64> = vec![1u64, 2, 3, 4];
+        let c: Vec<u64> = vec![65513, 65517, 65531, 20];
+        test_mul_opt(q, n, a, b, c)?;
 
-        let a: [u64; N] = [0u64, 0, 0, 2];
-        let b: [u64; N] = [0u64, 0, 0, 2];
-        let c: [u64; N] = [0u64, 0, 65533, 0];
-        test_mul_opt::<Q, N>(a, b, c)?;
+        let a: Vec<u64> = vec![0u64, 0, 0, 2];
+        let b: Vec<u64> = vec![0u64, 0, 0, 2];
+        let c: Vec<u64> = vec![0u64, 0, 65533, 0];
+        test_mul_opt(q, n, a, b, c)?;
 
         // TODO more testvectors
 
         Ok(())
     }
-    fn test_mul_opt<const Q: u64, const N: usize>(
-        a: [u64; N],
-        b: [u64; N],
-        expected_c: [u64; N],
+    fn test_mul_opt(
+        q: u64,
+        n: usize,
+        a: Vec<u64>,
+        b: Vec<u64>,
+        expected_c: Vec<u64>,
     ) -> Result<()> {
-        let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
-        let mut a = Rq::new(a, None);
-        let b: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(b[i]));
-        let mut b = Rq::new(b, None);
-        let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(expected_c[i]));
-        let expected_c = Rq::new(expected_c, None);
+        assert_eq!(a.len(), n);
+        assert_eq!(b.len(), n);
+
+        // let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
+        let mut a = Rq::from_vec_u64(q, n, a);
+        // let b: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(b[i]));
+        let mut b = Rq::from_vec_u64(q, n, b);
+        // let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(expected_c[i]));
+        let expected_c = Rq::from_vec_u64(q, n, expected_c);
 
         let c = mul_mut(&mut a, &mut b);
         assert_eq!(c, expected_c);
@@ -629,26 +783,26 @@ mod tests {
 
     #[test]
     fn test_rq_decompose() -> Result<()> {
-        const Q: u64 = 16;
-        const N: usize = 4;
+        let q: u64 = 16;
+        let n: usize = 4;
         let beta = 4;
         let l = 2;
 
-        let a = Rq::<Q, N>::from_vec_u64(vec![7u64, 14, 3, 6]);
+        let a = Rq::from_vec_u64(q, n, vec![7u64, 14, 3, 6]);
         let d = a.decompose(beta, l);
 
         assert_eq!(
-            d[0].coeffs().to_vec(),
+            d[0].coeffs(),
             vec![1u64, 3, 0, 1]
                 .iter()
-                .map(|e| Zq::<Q>::from_u64(*e))
+                .map(|e| Zq::from_u64(q, *e))
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            d[1].coeffs().to_vec(),
+            d[1].coeffs(),
             vec![3u64, 2, 3, 2]
                 .iter()
-                .map(|e| Zq::<Q>::from_u64(*e))
+                .map(|e| Zq::from_u64(q, *e))
                 .collect::<Vec<_>>()
         );
         Ok(())

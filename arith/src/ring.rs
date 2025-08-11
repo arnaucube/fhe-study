@@ -21,27 +21,28 @@ pub trait Ring:
     + PartialEq
     + Debug
     + Clone
-    + Copy
+    // + Copy
     + Sum<<Self as Add>::Output>
     + Sum<<Self as Mul>::Output>
 {
     /// C defines the coefficient type
     type C: Debug + Clone;
+    type Params: Debug+Clone+Copy;
 
-    const Q: u64;
-    const N: usize;
+    // const Q: u64;
+    // const N: usize;
 
     fn coeffs(&self) -> Vec<Self::C>;
-    fn zero() -> Self;
+    fn zero(params: Self::Params) -> Self;
     // note/wip/warning: dist (0,q) with f64, will output more '0=q' elements than other values
-    fn rand(rng: impl Rng, dist: impl Distribution<f64>) -> Self;
+    fn rand(rng: impl Rng, dist: impl Distribution<f64>, params: Self::Params) -> Self;
 
-    fn from_vec(coeffs: Vec<Self::C>) -> Self;
+    fn from_vec(params: Self::Params, coeffs: Vec<Self::C>) -> Self;
 
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self>;
 
-    fn remodule<const P: u64>(&self) -> impl Ring;
-    fn mod_switch<const P: u64>(&self) -> impl Ring;
+    fn remodule(&self, p:u64) -> impl Ring;
+    fn mod_switch(&self, p:u64) -> impl Ring;
 
     /// returns [ [(num/den) * self].round() ] mod q
     /// ie. performs the multiplication and division over f64, and then it

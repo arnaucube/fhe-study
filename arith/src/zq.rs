@@ -1,10 +1,14 @@
 use rand::{distributions::Distribution, Rng};
+use std::borrow::Borrow;
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 /// Z_q, integers modulus q, not necessarily prime
 #[derive(Clone, Copy, PartialEq)]
-pub struct Zq<const Q: u64>(pub u64);
+pub struct Zq {
+    pub q: u64,
+    pub v: u64,
+}
 
 // WIP
 // impl<const Q: u64> From<Vec<u64>> for Vec<Zq<Q>> {
@@ -13,32 +17,35 @@ pub struct Zq<const Q: u64>(pub u64);
 //     }
 // }
 
-pub(crate) fn modulus_u64<const Q: u64>(e: u64) -> u64 {
-    (e % Q + Q) % Q
+pub(crate) fn modulus_u64(q: u64, e: u64) -> u64 {
+    (e % q + q) % q
 }
-impl<const Q: u64> Zq<Q> {
-    pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+impl Zq {
+    pub fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, q: u64) -> Self {
         // TODO WIP
         let r: f64 = dist.sample(&mut rng);
-        Self::from_f64(r)
+        Self::from_f64(q, r)
         // Self::from_u64(r.round() as u64)
     }
-    pub fn from_u64(e: u64) -> Self {
-        if e >= Q {
-            // (e % Q + Q) % Q
-            return Zq(modulus_u64::<Q>(e));
-            // return Zq(e % Q);
+    pub fn from_u64(q: u64, v: u64) -> Self {
+        if v >= q {
+            // (v % Q + Q) % Q
+            return Zq {
+                q,
+                v: modulus_u64(q, v),
+            };
+            // return Zq(v % Q);
         }
-        Zq(e)
+        Zq { q, v }
     }
-    pub fn from_f64(e: f64) -> Self {
+    pub fn from_f64(q: u64, e: f64) -> Self {
         // WIP method
         let e: i64 = e.round() as i64;
-        let q = Q as i64;
-        if e < 0 || e >= q {
-            return Zq(((e % q + q) % q) as u64);
+        let q_i64 = q as i64;
+        if e < 0 || e >= q_i64 {
+            return Zq::from_u64(q, ((e % q_i64 + q_i64) % q_i64) as u64);
         }
-        Zq(e as u64)
+        Zq { q, v: e as u64 }
 
         // if e < 0 {
         //     // dbg!(&e);
@@ -50,15 +57,18 @@ impl<const Q: u64> Zq<Q> {
         // }
         // Zq(e as u64)
     }
-    pub fn from_bool(b: bool) -> Self {
+    pub fn from_bool(q: u64, b: bool) -> Self {
         if b {
-            Zq(1)
+            Zq { q, v: 1 }
         } else {
-            Zq(0)
+            Zq { q, v: 0 }
         }
     }
-    pub fn zero() -> Self {
-        Self(0u64)
+    pub fn zero(q: u64) -> Self {
+        Self { q, v: 0u64 }
+    }
+    pub fn one(q: u64) -> Self {
+        Self { q, v: 1u64 }
     }
     pub fn square(self) -> Self {
         self * self
@@ -66,18 +76,21 @@ impl<const Q: u64> Zq<Q> {
     // modular exponentiation
     pub fn exp(self, e: Self) -> Self {
         // mul-square approach
-        let mut res = Self(1);
+        let mut res = Self::one(self.q);
         let mut rem = e.clone();
         let mut exp = self;
         // for rem != Self(0) {
-        while rem != Self(0) {
+        while rem != Self::zero(self.q) {
             // if odd
             // TODO use a more readible expression
-            if 1 - ((rem.0 & 1) << 1) as i64 == -1 {
+            if 1 - ((rem.v & 1) << 1) as i64 == -1 {
                 res = res * exp;
             }
             exp = exp.square();
-            rem = Self(rem.0 >> 1);
+            rem = Self {
+                q: self.q,
+                v: rem.v >> 1,
+            };
         }
         res
     }
@@ -89,9 +102,9 @@ impl<const Q: u64> Zq<Q> {
         // let a = self.0;
         // let q = Q;
         let mut t = 0;
-        let mut r = Q;
+        let mut r = self.q;
         let mut new_t = 0;
-        let mut new_r = self.0.clone();
+        let mut new_r = self.v.clone();
         while new_r != 0 {
             let q = r / new_r;
 
@@ -104,16 +117,16 @@ impl<const Q: u64> Zq<Q> {
         // if t < 0 {
         //     t = t + q;
         // }
-        return Zq::from_u64(t);
+        return Zq::from_u64(self.q, t);
     }
-    pub fn inv(self) -> Zq<Q> {
-        let (g, x, _) = Self::egcd(self.0 as i128, Q as i128);
+    pub fn inv(self) -> Zq {
+        let (g, x, _) = Self::egcd(self.v as i128, self.q as i128);
         if g != 1 {
             // None
             panic!("E");
         } else {
-            let q = Q as i128;
-            Zq(((x % q + q) % q) as u64) // TODO maybe just Zq::new(x)
+            let q = self.q as i128;
+            Zq::from_u64(self.q, ((x % q + q) % q) as u64) // TODO maybe just Zq::new(x)
         }
     }
     fn egcd(a: i128, b: i128) -> (i128, i128, i128) {
@@ -126,8 +139,11 @@ impl<const Q: u64> Zq<Q> {
     }
 
     /// perform the mod switch operation from Q to Q', where Q2=Q'
-    pub fn mod_switch<const Q2: u64>(&self) -> Zq<Q2> {
-        Zq::<Q2>::from_u64(((self.0 as f64 * Q2 as f64) / Q as f64).round() as u64)
+    pub fn mod_switch(&self, q2: u64) -> Zq {
+        Zq::from_u64(
+            q2,
+            ((self.v as f64 * q2 as f64) / self.q as f64).round() as u64,
+        )
     }
 
     pub fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
@@ -138,19 +154,25 @@ impl<const Q: u64> Zq<Q> {
         }
     }
     pub fn decompose_base_beta(&self, beta: u32, l: u32) -> Vec<Self> {
-        let mut rem: u64 = self.0;
+        let mut rem: u64 = self.v;
         // next if is for cases in which beta does not divide Q (concretely
         // beta^l!=Q). round to the nearest multiple of q/beta^l
         if rem >= beta.pow(l) as u64 {
             // rem = Q - 1 - (Q / beta as u64); // floor
-            return vec![Zq(beta as u64 - 1); l as usize];
+            return vec![
+                Zq {
+                    q: self.q,
+                    v: beta as u64 - 1
+                };
+                l as usize
+            ];
         }
 
         let mut x: Vec<Self> = vec![];
         for i in 1..l + 1 {
-            let den = Q / beta.pow(i) as u64;
+            let den = self.q / beta.pow(i) as u64;
             let x_i = rem / den; // division between u64 already does floor
-            x.push(Self::from_u64(x_i));
+            x.push(Self::from_u64(self.q, x_i));
             if x_i != 0 {
                 rem = rem % den;
             }
@@ -161,15 +183,15 @@ impl<const Q: u64> Zq<Q> {
     pub fn decompose_base2(&self, l: u32) -> Vec<Self> {
         // next if is for cases in which beta does not divide Q (concretely
         // beta^l!=Q). round to the nearest multiple of q/beta^l
-        if self.0 >= 1 << l as u64 {
+        if self.v >= 1 << l as u64 {
             // rem = Q - 1 - (Q / beta as u64); // floor
             // (where beta=2)
-            return vec![Zq(1); l as usize];
+            return vec![Zq::one(self.q); l as usize];
         }
 
         (0..l)
             .rev()
-            .map(|i| Self(((self.0 >> i) & 1) as u64))
+            .map(|i| Self::from_u64(self.q, ((self.v >> i) & 1) as u64))
             .collect()
 
         // naive ver:
@@ -194,114 +216,143 @@ impl<const Q: u64> Zq<Q> {
     }
 }
 
-impl<const Q: u64> Zq<Q> {
+impl Zq {
     fn r#mod(self) -> Self {
-        if self.0 >= Q {
-            return Zq(self.0 % Q);
+        if self.v >= self.q {
+            return Zq::from_u64(self.q, self.v % self.q);
         }
         self
     }
 }
 
-impl<const Q: u64> Add<Zq<Q>> for Zq<Q> {
+impl Add<Zq> for Zq {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut r = self.0 + rhs.0;
-        if r >= Q {
-            r -= Q;
-        }
-        Zq(r)
-    }
-}
-impl<const Q: u64> Add<&Zq<Q>> for &Zq<Q> {
-    type Output = Zq<Q>;
+        assert_eq!(self.q, rhs.q);
 
-    fn add(self, rhs: &Zq<Q>) -> Self::Output {
-        let mut r = self.0 + rhs.0;
-        if r >= Q {
-            r -= Q;
+        let mut v = self.v + rhs.v;
+        if v >= self.q {
+            v -= self.q;
         }
-        Zq(r)
+        Zq { q: self.q, v }
     }
 }
-impl<const Q: u64> AddAssign<Zq<Q>> for Zq<Q> {
+impl Add<&Zq> for &Zq {
+    type Output = Zq;
+
+    fn add(self, rhs: &Zq) -> Self::Output {
+        assert_eq!(self.q, rhs.q);
+
+        let mut v = self.v + rhs.v;
+        if v >= self.q {
+            v -= self.q;
+        }
+        Zq { q: self.q, v }
+    }
+}
+impl AddAssign<Zq> for Zq {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs
     }
 }
-impl<const Q: u64> std::iter::Sum for Zq<Q> {
-    fn sum<I>(iter: I) -> Self
+impl std::iter::Sum for Zq {
+    fn sum<I>(mut iter: I) -> Self
     where
         I: Iterator<Item = Self>,
     {
-        iter.fold(Zq(0), |acc, x| acc + x)
+        let first: Zq = iter.next().unwrap();
+        iter.fold(first, |acc, x| acc + x)
     }
 }
-impl<const Q: u64> Sub<Zq<Q>> for Zq<Q> {
+impl Sub<Zq> for Zq {
     type Output = Self;
 
-    fn sub(self, rhs: Self) -> Zq<Q> {
-        if self.0 >= rhs.0 {
-            Zq(self.0 - rhs.0)
-        } else {
-            Zq((Q + self.0) - rhs.0)
-        }
-    }
-}
-impl<const Q: u64> Sub<&Zq<Q>> for &Zq<Q> {
-    type Output = Zq<Q>;
+    fn sub(self, rhs: Self) -> Zq {
+        assert_eq!(self.q, rhs.q);
 
-    fn sub(self, rhs: &Zq<Q>) -> Self::Output {
-        if self.0 >= rhs.0 {
-            Zq(self.0 - rhs.0)
+        if self.v >= rhs.v {
+            Zq {
+                q: self.q,
+                v: self.v - rhs.v,
+            }
         } else {
-            Zq((Q + self.0) - rhs.0)
+            Zq {
+                q: self.q,
+                v: (self.q + self.v) - rhs.v,
+            }
         }
     }
 }
-impl<const Q: u64> SubAssign<Zq<Q>> for Zq<Q> {
+impl Sub<&Zq> for &Zq {
+    type Output = Zq;
+
+    fn sub(self, rhs: &Zq) -> Self::Output {
+        assert_eq!(self.q, rhs.q);
+
+        if self.q >= rhs.q {
+            Zq {
+                q: self.q,
+                v: self.v - rhs.v,
+            }
+        } else {
+            Zq {
+                q: self.q,
+                v: (self.q + self.v) - rhs.v,
+            }
+        }
+    }
+}
+impl SubAssign<Zq> for Zq {
     fn sub_assign(&mut self, rhs: Self) {
         *self = *self - rhs
     }
 }
-impl<const Q: u64> Neg for Zq<Q> {
+impl Neg for Zq {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        if self.0 == 0 {
+        if self.v == 0 {
             return self;
         }
-        Zq(Q - self.0)
+        Zq {
+            q: self.q,
+            v: self.q - self.v,
+        }
     }
 }
-impl<const Q: u64> Mul<Zq<Q>> for Zq<Q> {
+impl Mul<Zq> for Zq {
     type Output = Self;
 
-    fn mul(self, rhs: Self) -> Zq<Q> {
+    fn mul(self, rhs: Self) -> Zq {
+        assert_eq!(self.q, rhs.q);
+
         // TODO non-naive way
-        Zq(((self.0 as u128 * rhs.0 as u128) % Q as u128) as u64)
+        Zq {
+            q: self.q,
+            v: ((self.v as u128 * rhs.v as u128) % self.q as u128) as u64,
+        }
         // Zq((self.0 * rhs.0) % Q)
     }
 }
-impl<const Q: u64> Div<Zq<Q>> for Zq<Q> {
+impl Div<Zq> for Zq {
     type Output = Self;
 
-    fn div(self, rhs: Self) -> Zq<Q> {
+    fn div(self, rhs: Self) -> Zq {
         // TODO non-naive way
         // Zq((self.0 / rhs.0) % Q)
         self * rhs.inv()
     }
 }
 
-impl<const Q: u64> fmt::Display for Zq<Q> {
+impl fmt::Display for Zq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.v)
     }
 }
-impl<const Q: u64> fmt::Debug for Zq<Q> {
+impl fmt::Debug for Zq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.v)
     }
 }
 
@@ -312,80 +363,83 @@ mod tests {
 
     #[test]
     fn exp() {
-        const Q: u64 = 1021;
-        let a = Zq::<Q>(3);
-        let b = Zq::<Q>(3);
-        assert_eq!(a.exp(b), Zq(27));
+        const q: u64 = 1021;
+        let a = Zq::from_u64(q, 3);
+        let b = Zq::from_u64(q, 3);
+        assert_eq!(a.exp(b), Zq::from_u64(q, 27));
 
-        let a = Zq::<Q>(1000);
-        let b = Zq::<Q>(3);
-        assert_eq!(a.exp(b), Zq(949));
+        let a = Zq::from_u64(q, 1000);
+        let b = Zq::from_u64(q, 3);
+        assert_eq!(a.exp(b), Zq::from_u64(q, 949));
     }
     #[test]
     fn neg() {
-        const Q: u64 = 1021;
-        let a = Zq::<Q>::from_f64(101.0);
-        let b = Zq::<Q>::from_f64(-1.0);
+        let q: u64 = 1021;
+        let a = Zq::from_f64(q, 101.0);
+        let b = Zq::from_f64(q, -1.0);
         assert_eq!(-a, a * b);
     }
 
-    fn recompose<const Q: u64>(beta: u32, l: u32, d: Vec<Zq<Q>>) -> Zq<Q> {
+    fn recompose(q: u64, beta: u32, l: u32, d: Vec<Zq>) -> Zq {
         let mut x = 0u64;
         for i in 0..l {
-            x += d[i as usize].0 * Q / beta.pow(i + 1) as u64;
+            x += d[i as usize].v * q / beta.pow(i + 1) as u64;
         }
-        Zq::from_u64(x)
+        Zq::from_u64(q, x)
     }
 
     #[test]
     fn test_decompose() {
-        const Q1: u64 = 16;
+        let q1: u64 = 16;
         let beta: u32 = 2;
         let l: u32 = 4;
-        let x = Zq::<Q1>::from_u64(9);
+        let x = Zq::from_u64(q1, 9);
         let d = x.decompose(beta, l);
 
-        assert_eq!(recompose::<Q1>(beta, l, d), x);
+        assert_eq!(recompose(q1, beta, l, d), x);
 
-        const Q: u64 = 5u64.pow(3);
+        let q: u64 = 5u64.pow(3);
         let beta: u32 = 5;
         let l: u32 = 3;
 
-        let dist = Uniform::new(0_u64, Q);
+        let dist = Uniform::new(0_u64, q);
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let x = Zq::<Q>::from_u64(dist.sample(&mut rng));
+            let x = Zq::from_u64(q, dist.sample(&mut rng));
             let d = x.decompose(beta, l);
             assert_eq!(d.len(), l as usize);
-            assert_eq!(recompose::<Q>(beta, l, d), x);
+            assert_eq!(recompose(q, beta, l, d), x);
         }
     }
 
     #[test]
     fn test_decompose_approx() {
-        const Q: u64 = 2u64.pow(4) + 1;
+        let q: u64 = 2u64.pow(4) + 1;
         let beta: u32 = 2;
         let l: u32 = 4;
-        let x = Zq::<Q>::from_u64(16); // in q, but bigger than beta^l
+        let x = Zq::from_u64(q, 16); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
         assert_eq!(d.len(), l as usize);
-        assert_eq!(recompose::<Q>(beta, l, d), Zq(15));
+        assert_eq!(recompose(q, beta, l, d), Zq::from_u64(q, 15));
 
-        const Q2: u64 = 5u64.pow(3) + 1;
+        let q2: u64 = 5u64.pow(3) + 1;
         let beta: u32 = 5;
         let l: u32 = 3;
-        let x = Zq::<Q2>::from_u64(125); // in q, but bigger than beta^l
+        let x = Zq::from_u64(q2, 125); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
         assert_eq!(d.len(), l as usize);
-        assert_eq!(recompose::<Q2>(beta, l, d), Zq(124));
+        assert_eq!(recompose(q2, beta, l, d), Zq::from_u64(q2, 124));
 
-        const Q3: u64 = 2u64.pow(16) + 1;
+        let q3: u64 = 2u64.pow(16) + 1;
         let beta: u32 = 2;
         let l: u32 = 16;
-        let x = Zq::<Q3>::from_u64(Q3 - 1); // in q, but bigger than beta^l
+        let x = Zq::from_u64(q3, q3 - 1); // in q, but bigger than beta^l
         let d = x.decompose(beta, l);
         assert_eq!(d.len(), l as usize);
-        assert_eq!(recompose::<Q3>(beta, l, d), Zq(beta.pow(l) as u64 - 1));
+        assert_eq!(
+            recompose(q3, beta, l, d),
+            Zq::from_u64(q3, beta.pow(l) as u64 - 1)
+        );
     }
 }

@@ -16,20 +16,22 @@ pub struct T64(pub u64);
 // `Tn<1>`.
 impl Ring for T64 {
     type C = T64;
-    const Q: u64 = u64::MAX; // WIP
-    const N: usize = 1;
+    type Params = ();
+
+    // const Q: u64 = u64::MAX; // WIP
+    // const N: usize = 1;
 
     fn coeffs(&self) -> Vec<T64> {
         vec![self.clone()]
     }
-    fn zero() -> Self {
+    fn zero(_: ()) -> Self {
         Self(0u64)
     }
-    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, _: ()) -> Self {
         let r: f64 = dist.sample(&mut rng);
         Self(r.round() as u64)
     }
-    fn from_vec(coeffs: Vec<Self::C>) -> Self {
+    fn from_vec(_n: (), coeffs: Vec<Self::C>) -> Self {
         assert_eq!(coeffs.len(), 1);
         coeffs[0]
     }
@@ -46,18 +48,18 @@ impl Ring for T64 {
             .map(|i| T64(((self.0 >> i) & 1) as u64))
             .collect()
     }
-    fn remodule<const P: u64>(&self) -> T64 {
+    fn remodule(&self, p: u64) -> T64 {
         todo!()
     }
 
     // modulus switch from Q to Q2: self * Q2/Q
-    fn mod_switch<const Q2: u64>(&self) -> T64 {
+    fn mod_switch(&self, q2: u64) -> T64 {
         // for the moment we assume Q|Q2, since Q=2^64, check that Q2 is a power
         // of two:
-        assert!(Q2.is_power_of_two());
+        assert!(q2.is_power_of_two());
         // since Q=2^64, dividing Q2/Q is equivalent to dividing 2^log2(Q2)/2^64
         // which would be like right-shifting 64-log2(Q2).
-        let log2_q2 = 63 - Q2.leading_zeros();
+        let log2_q2 = 63 - q2.leading_zeros();
         T64(self.0 >> (64 - log2_q2))
     }
 
@@ -175,7 +177,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
-            let x = T64::rand(&mut rng, Standard);
+            let x = T64::rand(&mut rng, Standard, ());
             let d = x.decompose(beta, l);
             assert_eq!(recompose(d), x);
         }

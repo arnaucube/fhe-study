@@ -2,8 +2,10 @@
 //!
 
 use anyhow::Result;
+use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
 use std::array;
+use std::borrow::Borrow;
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -12,34 +14,46 @@ use crate::Ring;
 
 // TODO rename to not have name conflicts with the Ring trait (R: Ring)
 // PolynomialRing element, where the PolynomialRing is R = Z[X]/(X^n +1)
-#[derive(Clone, Copy)]
-pub struct R<const N: usize>(pub [i64; N]);
+#[derive(Clone)]
+pub struct R {
+    pub n: usize,
+    pub coeffs: Vec<i64>,
+}
 
 // impl<const N: usize> Ring for R<N> {
-impl<const N: usize> R<N> {
+impl R {
     // type C = i64;
+    // type Params = usize; // n
+
     // const Q: u64 = i64::MAX as u64; // WIP
     // const N: usize = N;
 
     pub fn coeffs(&self) -> Vec<i64> {
-        self.0.to_vec()
+        self.coeffs.clone()
     }
-    fn zero() -> Self {
-        let coeffs: [i64; N] = array::from_fn(|_| 0i64);
-        Self(coeffs)
+    fn zero(n: usize) -> Self {
+        Self {
+            n,
+            coeffs: vec![0i64; n],
+        }
     }
-    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>) -> Self {
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, n: usize) -> Self {
         // let coeffs: [i64; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
-        let coeffs: [i64; N] = array::from_fn(|_| dist.sample(&mut rng).round() as i64);
-        Self(coeffs)
+        // let coeffs: [i64; N] = array::from_fn(|_| dist.sample(&mut rng).round() as i64);
+        Self {
+            n,
+            coeffs: std::iter::repeat_with(|| dist.sample(&mut rng).round() as i64)
+                .take(n)
+                .collect(),
+        }
         // let coeffs: [C; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
         // Self(coeffs)
     }
 
-    pub fn from_vec(coeffs: Vec<i64>) -> Self {
+    pub fn from_vec(n: usize, coeffs: Vec<i64>) -> Self {
         let mut p = coeffs;
-        modulus::<N>(&mut p);
-        Self(array::from_fn(|i| p[i]))
+        modulus(n, &mut p);
+        Self { n, coeffs: p }
     }
 
     /*
@@ -71,34 +85,38 @@ impl<const N: usize> R<N> {
     */
 }
 
-impl<const Q: u64, const N: usize> From<crate::ring_nq::Rq<Q, N>> for R<N> {
-    fn from(rq: crate::ring_nq::Rq<Q, N>) -> Self {
-        Self::from_vec_u64(rq.coeffs().to_vec().iter().map(|e| e.0).collect())
+impl From<crate::ring_nq::Rq> for R {
+    fn from(rq: crate::ring_nq::Rq) -> Self {
+        Self::from_vec_u64(rq.n, rq.coeffs().to_vec().iter().map(|e| e.v).collect())
     }
 }
 
-impl<const N: usize> R<N> {
+impl R {
     // pub fn coeffs(&self) -> [i64; N] {
     //     self.0
     // }
-    pub fn to_rq<const Q: u64>(self) -> crate::Rq<Q, N> {
-        crate::Rq::<Q, N>::from(self)
+    pub fn to_rq(self, q: u64) -> crate::Rq {
+        crate::Rq::from((q, self))
     }
 
     // this method is mostly for tests
-    pub fn from_vec_u64(coeffs: Vec<u64>) -> Self {
+    pub fn from_vec_u64(n: usize, coeffs: Vec<u64>) -> Self {
         let coeffs_i64 = coeffs.iter().map(|c| *c as i64).collect();
-        Self::from_vec(coeffs_i64)
+        Self::from_vec(n, coeffs_i64)
     }
-    pub fn from_vec_f64(coeffs: Vec<f64>) -> Self {
+    pub fn from_vec_f64(n: usize, coeffs: Vec<f64>) -> Self {
         let coeffs_i64 = coeffs.iter().map(|c| c.round() as i64).collect();
-        Self::from_vec(coeffs_i64)
+        Self::from_vec(n, coeffs_i64)
     }
-    pub fn new(coeffs: [i64; N]) -> Self {
-        Self(coeffs)
+    pub fn new(n: usize, coeffs: Vec<i64>) -> Self {
+        assert_eq!(n, coeffs.len());
+        Self { n, coeffs }
     }
     pub fn mul_by_i64(&self, s: i64) -> Self {
-        Self(array::from_fn(|i| self.0[i] * s))
+        Self {
+            n: self.n,
+            coeffs: self.coeffs.iter().map(|c_i| c_i * s).collect(),
+        }
     }
 
     pub fn infinity_norm(&self) -> u64 {
@@ -108,10 +126,10 @@ impl<const N: usize> R<N> {
             .map(|x| x.abs() as u64)
             .fold(0, |a, b| a.max(b))
     }
-    pub fn mod_centered_q<const Q: u64>(&self) -> R<N> {
-        let q = Q as i64;
+    pub fn mod_centered_q(&self, q: u64) -> R {
+        let q = q as i64;
         let r = self
-            .0
+            .coeffs
             .iter()
             .map(|v| {
                 let mut res = v % q;
@@ -121,190 +139,224 @@ impl<const N: usize> R<N> {
                 res
             })
             .collect::<Vec<i64>>();
-        R::<N>::from_vec(r)
+        R::from_vec(self.n, r)
     }
 }
 
-pub fn mul_div_round<const Q: u64, const N: usize>(
-    v: Vec<i64>,
-    num: u64,
-    den: u64,
-) -> crate::Rq<Q, N> {
+pub fn mul_div_round(q: u64, n: usize, v: Vec<i64>, num: u64, den: u64) -> crate::Rq {
     // dbg!(&v);
     let r: Vec<f64> = v
         .iter()
         .map(|e| ((num as f64 * *e as f64) / den as f64).round())
         .collect();
     // dbg!(&r);
-    crate::Rq::<Q, N>::from_vec_f64(r)
+    crate::Rq::from_vec_f64(q, n, r)
 }
 
 // TODO rename to make it clear that is not mod q, but mod X^N+1
 // apply mod (X^N+1)
-pub fn modulus<const N: usize>(p: &mut Vec<i64>) {
-    if p.len() < N {
+pub fn modulus(n: usize, p: &mut Vec<i64>) {
+    if p.len() < n {
         return;
     }
-    for i in N..p.len() {
-        p[i - N] = p[i - N].clone() - p[i].clone();
+    for i in n..p.len() {
+        p[i - n] = p[i - n].clone() - p[i].clone();
         p[i] = 0;
     }
-    p.truncate(N);
+    p.truncate(n);
 }
-pub fn modulus_i128<const N: usize>(p: &mut Vec<i128>) {
-    if p.len() < N {
+pub fn modulus_i128(n: usize, p: &mut Vec<i128>) {
+    if p.len() < n {
         return;
     }
-    for i in N..p.len() {
-        p[i - N] = p[i - N].clone() - p[i].clone();
+    for i in n..p.len() {
+        p[i - n] = p[i - n].clone() - p[i].clone();
         p[i] = 0;
     }
-    p.truncate(N);
+    p.truncate(n);
 }
 
-impl<const N: usize> PartialEq for R<N> {
+impl PartialEq for R {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.coeffs == other.coeffs && self.n == other.n
     }
 }
-impl<const N: usize> Add<R<N>> for R<N> {
+impl Add<R> for R {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        Self(array::from_fn(|i| self.0[i] + rhs.0[i]))
+        assert_eq!(self.n, rhs.n);
+        Self {
+            n: self.n,
+            coeffs: zip_eq(self.coeffs, rhs.coeffs)
+                .map(|(l, r)| l + r)
+                .collect(),
+        }
     }
 }
-impl<const N: usize> Add<&R<N>> for &R<N> {
-    type Output = R<N>;
+impl Add<&R> for &R {
+    type Output = R;
 
-    fn add(self, rhs: &R<N>) -> Self::Output {
-        R(array::from_fn(|i| self.0[i] + rhs.0[i]))
+    fn add(self, rhs: &R) -> Self::Output {
+        // R(array::from_fn(|i| self.0[i] + rhs.0[i]))
+        assert_eq!(self.n, rhs.n);
+        R {
+            n: self.n,
+            coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
+                .map(|(l, r)| l + r)
+                .collect(),
+        }
     }
 }
-impl<const N: usize> AddAssign for R<N> {
+impl AddAssign for R {
     fn add_assign(&mut self, rhs: Self) {
-        for i in 0..N {
-            self.0[i] += rhs.0[i];
+        assert_eq!(self.n, rhs.n);
+        for i in 0..self.n {
+            self.coeffs[i] += rhs.coeffs[i];
         }
     }
 }
 
-impl<const N: usize> Sum<R<N>> for R<N> {
-    fn sum<I>(iter: I) -> Self
+impl Sum<R> for R {
+    fn sum<I>(mut iter: I) -> Self
     where
         I: Iterator<Item = Self>,
     {
-        let mut acc = R::<N>::zero();
-        for e in iter {
-            acc += e;
-        }
-        acc
+        // let mut acc = R::zero();
+        // for e in iter {
+        //     acc += e;
+        // }
+        // acc
+        let first = iter.next().unwrap();
+        iter.fold(first, |acc, x| acc + x)
     }
 }
 
-impl<const N: usize> Sub<R<N>> for R<N> {
+impl Sub<R> for R {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        Self(array::from_fn(|i| self.0[i] - rhs.0[i]))
+        // Self(array::from_fn(|i| self.0[i] - rhs.0[i]))
+        assert_eq!(self.n, rhs.n);
+        Self {
+            n: self.n,
+            coeffs: zip_eq(self.coeffs, rhs.coeffs)
+                .map(|(l, r)| l - r)
+                .collect(),
+        }
     }
 }
-impl<const N: usize> Sub<&R<N>> for &R<N> {
-    type Output = R<N>;
+impl Sub<&R> for &R {
+    type Output = R;
 
-    fn sub(self, rhs: &R<N>) -> Self::Output {
-        R(array::from_fn(|i| self.0[i] - rhs.0[i]))
-    }
-}
-
-impl<const N: usize> SubAssign for R<N> {
-    fn sub_assign(&mut self, rhs: Self) {
-        for i in 0..N {
-            self.0[i] -= rhs.0[i];
+    fn sub(self, rhs: &R) -> Self::Output {
+        // R(array::from_fn(|i| self.0[i] - rhs.0[i]))
+        assert_eq!(self.n, rhs.n);
+        R {
+            n: self.n,
+            coeffs: zip_eq(&self.coeffs, &rhs.coeffs)
+                .map(|(l, r)| l - r)
+                .collect(),
         }
     }
 }
 
-impl<const N: usize> Mul<R<N>> for R<N> {
+impl SubAssign for R {
+    fn sub_assign(&mut self, rhs: Self) {
+        assert_eq!(self.n, rhs.n);
+        for i in 0..self.n {
+            self.coeffs[i] -= rhs.coeffs[i];
+        }
+    }
+}
+
+impl Mul<R> for R {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         naive_poly_mul(&self, &rhs)
     }
 }
-impl<const N: usize> Mul<&R<N>> for &R<N> {
-    type Output = R<N>;
+impl Mul<&R> for &R {
+    type Output = R;
 
-    fn mul(self, rhs: &R<N>) -> Self::Output {
+    fn mul(self, rhs: &R) -> Self::Output {
         naive_poly_mul(self, rhs)
     }
 }
 
 // TODO WIP
-pub fn naive_poly_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> R<N> {
-    let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
-    let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
-    let mut result: Vec<i128> = vec![0; (N * 2) - 1];
-    for i in 0..N {
-        for j in 0..N {
+pub fn naive_poly_mul(poly1: &R, poly2: &R) -> R {
+    assert_eq!(poly1.n, poly2.n);
+    let n = poly1.n;
+
+    let poly1: Vec<i128> = poly1.coeffs.iter().map(|c| *c as i128).collect();
+    let poly2: Vec<i128> = poly2.coeffs.iter().map(|c| *c as i128).collect();
+    let mut result: Vec<i128> = vec![0; (n * 2) - 1];
+    for i in 0..n {
+        for j in 0..n {
             result[i + j] = result[i + j] + poly1[i] * poly2[j];
         }
     }
 
     // apply mod (X^N + 1))
     // R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
-    modulus_i128::<N>(&mut result);
+    modulus_i128(n, &mut result);
     // dbg!(&result);
     // dbg!(R::<N>(array::from_fn(|i| result[i] as i64)).coeffs());
 
+    let result_i64: Vec<i64> = result.iter().map(|c_i| *c_i as i64).collect();
+    let r = R::from_vec(n, result_i64);
     // sanity check: check that there are no coeffs > i64_max
     assert_eq!(
         result,
-        R::<N>(array::from_fn(|i| result[i] as i64))
-            .coeffs()
-            .iter()
-            .map(|c| *c as i128)
-            .collect::<Vec<_>>()
+        r.coeffs.iter().map(|c| *c as i128).collect::<Vec<_>>()
     );
-    R(array::from_fn(|i| result[i] as i64))
+    r
 }
-pub fn naive_mul_2<const N: usize>(poly1: &Vec<i128>, poly2: &Vec<i128>) -> Vec<i128> {
-    let mut result: Vec<i128> = vec![0; (N * 2) - 1];
-    for i in 0..N {
-        for j in 0..N {
+pub fn naive_mul_2(n: usize, poly1: &Vec<i128>, poly2: &Vec<i128>) -> Vec<i128> {
+    let mut result: Vec<i128> = vec![0; (n * 2) - 1];
+    for i in 0..n {
+        for j in 0..n {
             result[i + j] = result[i + j] + poly1[i] * poly2[j];
         }
     }
 
     // apply mod (X^N + 1))
     // R::<N>::from_vec(result.iter().map(|c| *c as i64).collect())
-    modulus_i128::<N>(&mut result);
+    modulus_i128(n, &mut result);
     result
 }
 
-pub fn naive_mul<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
-    let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
-    let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
-    let mut result = vec![0; (N * 2) - 1];
-    for i in 0..N {
-        for j in 0..N {
+pub fn naive_mul(poly1: &R, poly2: &R) -> Vec<i64> {
+    assert_eq!(poly1.n, poly2.n);
+    let n = poly1.n;
+
+    let poly1: Vec<i128> = poly1.coeffs.iter().map(|c| *c as i128).collect();
+    let poly2: Vec<i128> = poly2.coeffs.iter().map(|c| *c as i128).collect();
+    let mut result = vec![0; (n * 2) - 1];
+    for i in 0..n {
+        for j in 0..n {
             result[i + j] = result[i + j] + poly1[i] * poly2[j];
         }
     }
     result.iter().map(|c| *c as i64).collect()
 }
-pub fn naive_mul_TMP<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
-    let poly1: Vec<i128> = poly1.0.iter().map(|c| *c as i128).collect();
-    let poly2: Vec<i128> = poly2.0.iter().map(|c| *c as i128).collect();
-    let mut result: Vec<i128> = vec![0; (N * 2) - 1];
-    for i in 0..N {
-        for j in 0..N {
+pub fn naive_mul_TMP(poly1: &R, poly2: &R) -> Vec<i64> {
+    assert_eq!(poly1.n, poly2.n);
+    let n = poly1.n;
+
+    let poly1: Vec<i128> = poly1.coeffs.iter().map(|c| *c as i128).collect();
+    let poly2: Vec<i128> = poly2.coeffs.iter().map(|c| *c as i128).collect();
+    let mut result: Vec<i128> = vec![0; (n * 2) - 1];
+    for i in 0..n {
+        for j in 0..n {
             result[i + j] = result[i + j] + poly1[i] * poly2[j];
         }
     }
 
     // dbg!(&result);
-    modulus_i128::<N>(&mut result);
+    modulus_i128(n, &mut result);
     // for c_i in result.iter() {
     //     println!("---");
     //     println!("{:?}", &c_i);
@@ -316,8 +368,8 @@ pub fn naive_mul_TMP<const N: usize>(poly1: &R<N>, poly2: &R<N>) -> Vec<i64> {
 }
 
 // wip
-pub fn mod_centered_q<const Q: u64, const N: usize>(p: Vec<i128>) -> R<N> {
-    let q: i128 = Q as i128;
+pub fn mod_centered_q(q: u64, n: usize, p: Vec<i128>) -> R {
+    let q: i128 = q as i128;
     let r = p
         .iter()
         .map(|v| {
@@ -328,10 +380,10 @@ pub fn mod_centered_q<const Q: u64, const N: usize>(p: Vec<i128>) -> R<N> {
             res
         })
         .collect::<Vec<i128>>();
-    R::<N>::from_vec(r.iter().map(|v| *v as i64).collect::<Vec<i64>>())
+    R::from_vec(n, r.iter().map(|v| *v as i64).collect::<Vec<i64>>())
 }
 
-impl<const N: usize> Mul<i64> for R<N> {
+impl Mul<i64> for R {
     type Output = Self;
 
     fn mul(self, s: i64) -> Self {
@@ -339,34 +391,38 @@ impl<const N: usize> Mul<i64> for R<N> {
     }
 }
 // mul by u64
-impl<const N: usize> Mul<u64> for R<N> {
+impl Mul<u64> for R {
     type Output = Self;
 
     fn mul(self, s: u64) -> Self {
         self.mul_by_i64(s as i64)
     }
 }
-impl<const N: usize> Mul<&u64> for &R<N> {
-    type Output = R<N>;
+impl Mul<&u64> for &R {
+    type Output = R;
 
     fn mul(self, s: &u64) -> Self::Output {
         self.mul_by_i64(*s as i64)
     }
 }
 
-impl<const N: usize> Neg for R<N> {
+impl Neg for R {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        Self(array::from_fn(|i| -self.0[i]))
+        // Self(array::from_fn(|i| -self.0[i]))
+        Self {
+            n: self.n,
+            coeffs: self.coeffs.iter().map(|c_i| -c_i).collect(),
+        }
     }
 }
 
-impl<const N: usize> R<N> {
+impl R {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut str = "";
         let mut zero = true;
-        for (i, coeff) in self.0.iter().enumerate().rev() {
+        for (i, coeff) in self.coeffs.iter().enumerate().rev() {
             if *coeff == 0 {
                 continue;
             }
@@ -395,18 +451,18 @@ impl<const N: usize> R<N> {
 
         f.write_str(" mod Z")?;
         f.write_str("/(X^")?;
-        f.write_str(N.to_string().as_str())?;
+        f.write_str(self.n.to_string().as_str())?;
         f.write_str("+1)")?;
         Ok(())
     }
 }
-impl<const N: usize> fmt::Display for R<N> {
+impl fmt::Display for R {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt(f)?;
         Ok(())
     }
 }
-impl<const N: usize> fmt::Debug for R<N> {
+impl fmt::Debug for R {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt(f)?;
         Ok(())
@@ -420,38 +476,33 @@ mod tests {
 
     #[test]
     fn test_mul() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 2;
-        let q: i64 = Q as i64;
+        let n: usize = 2;
+        let q: i64 = (2u64.pow(16) + 1) as i64;
 
         // test vectors generated with SageMath
-        let a: [i64; N] = [q - 1, q - 1];
-        let b: [i64; N] = [q - 1, q - 1];
-        let c: [i64; N] = [0, 8589934592];
-        test_mul_opt::<Q, N>(a, b, c)?;
+        let a: Vec<i64> = vec![q - 1, q - 1];
+        let b: Vec<i64> = vec![q - 1, q - 1];
+        let c: Vec<i64> = vec![0, 8589934592];
+        test_mul_opt(n, a, b, c)?;
 
-        let a: [i64; N] = [1, q - 1];
-        let b: [i64; N] = [1, q - 1];
-        let c: [i64; N] = [-4294967295, 131072];
-        test_mul_opt::<Q, N>(a, b, c)?;
+        let a: Vec<i64> = vec![1, q - 1];
+        let b: Vec<i64> = vec![1, q - 1];
+        let c: Vec<i64> = vec![-4294967295, 131072];
+        test_mul_opt(n, a, b, c)?;
 
         Ok(())
     }
-    fn test_mul_opt<const Q: u64, const N: usize>(
-        a: [i64; N],
-        b: [i64; N],
-        expected_c: [i64; N],
-    ) -> Result<()> {
-        let mut a = R::new(a);
-        let mut b = R::new(b);
+    fn test_mul_opt(n: usize, a: Vec<i64>, b: Vec<i64>, expected_c: Vec<i64>) -> Result<()> {
+        let mut a = R::new(n, a);
+        let mut b = R::new(n, b);
         dbg!(&a);
         dbg!(&b);
-        let expected_c = R::new(expected_c);
+        let expected_c = R::new(n, expected_c);
 
         let mut c = naive_mul(&mut a, &mut b);
-        modulus::<N>(&mut c);
-        dbg!(R::<N>::from_vec(c.clone()));
-        assert_eq!(c, expected_c.0.to_vec());
+        modulus(n, &mut c);
+        dbg!(R::from_vec(n, c.clone()));
+        assert_eq!(c, expected_c.coeffs);
         Ok(())
     }
 }
