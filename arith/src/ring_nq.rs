@@ -22,8 +22,8 @@ use crate::Ring;
 /// The implementation assumes that q is prime.
 #[derive(Clone)]
 pub struct Rq {
-    pub(crate) q: u64, // TODO think if really needed or it's fine with coeffs[0].q
-    pub(crate) n: usize,
+    pub q: u64, // TODO think if really needed or it's fine with coeffs[0].q
+    pub n: usize,
 
     pub(crate) coeffs: Vec<Zq>,
 
