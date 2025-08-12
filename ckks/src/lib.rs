@@ -5,7 +5,7 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
-use arith::{Rq, C, R};
+use arith::{RingParam, Rq, C, R};
 
 use anyhow::Result;
 use rand::Rng;
@@ -20,8 +20,7 @@ const ERR_SIGMA: f64 = 3.2;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
-    q: u64,
-    n: usize,
+    ring: RingParam,
     t: u64,
 }
 
@@ -37,7 +36,7 @@ pub struct CKKS {
 
 impl CKKS {
     pub fn new(params: &Params, delta: C<f64>) -> Self {
-        let encoder = Encoder::new(params.n, delta);
+        let encoder = Encoder::new(params.ring.n, delta);
         Self {
             params: params.clone(),
             encoder,
@@ -50,14 +49,14 @@ impl CKKS {
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let e = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
 
-        let mut s = Rq::rand_f64(&mut rng, Xi_key, params.q, params.n)?;
+        let mut s = Rq::rand_f64(&mut rng, Xi_key, &params.ring)?;
         // since s is going to be multiplied by other Rq elements, already
         // compute its NTT
         s.compute_evals();
 
-        let a = Rq::rand_f64(&mut rng, Xi_key, params.q, params.n)?;
+        let a = Rq::rand_f64(&mut rng, Xi_key, &params.ring)?;
 
         let pk: PublicKey = PublicKey((&(-a.clone()) * &s) + e, a.clone()); // TODO rm clones
         Ok((SecretKey(s), pk))
@@ -74,13 +73,13 @@ impl CKKS {
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let e_0 = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
-        let e_1 = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
+        let e_0 = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
+        let e_1 = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
 
-        let v = Rq::rand_f64(&mut rng, Xi_key, params.q, params.n)?;
+        let v = Rq::rand_f64(&mut rng, Xi_key, &params.ring)?;
 
         // let m: Rq = Rq::from(*m);
-        let m: Rq = m.clone().to_rq(params.q); // TODO rm clone
+        let m: Rq = m.clone().to_rq(params.ring.q); // TODO rm clone
 
         Ok((m + e_0 + &v * &pk.0.clone(), &v * &pk.1 + e_1))
     }
@@ -128,7 +127,10 @@ mod tests {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 32;
         let t: u64 = 50;
-        let params = Params { q, n, t };
+        let params = Params {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor_u64 = 512_u64; // delta
         let scale_factor = C::<f64>::new(scale_factor_u64 as f64, 0.0); // delta
 
@@ -139,7 +141,8 @@ mod tests {
 
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
-            let m_raw: R = Rq::rand_f64(&mut rng, Uniform::new(0_f64, t as f64), q, n)?.to_r();
+            let m_raw: R =
+                Rq::rand_f64(&mut rng, Uniform::new(0_f64, t as f64), &params.ring)?.to_r();
             let m = &m_raw * &scale_factor_u64;
 
             let ct = ckks.encrypt(&mut rng, &pk, &m)?;
@@ -150,7 +153,7 @@ mod tests {
                 .iter()
                 .map(|e| (*e as f64 / (scale_factor_u64 as f64)).round() as u64)
                 .collect();
-            let m_decrypted = Rq::from_vec_u64(q, n, m_decrypted);
+            let m_decrypted = Rq::from_vec_u64(&params.ring, m_decrypted);
             // assert_eq!(m_decrypted, Rq::from(m_raw));
             assert_eq!(m_decrypted, m_raw.to_rq(q));
         }
@@ -163,7 +166,10 @@ mod tests {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 16;
         let t: u64 = 8;
-        let params = Params { q, n, t };
+        let params = Params {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(512.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
@@ -209,7 +215,10 @@ mod tests {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 16;
         let t: u64 = 8;
-        let params = Params { q, n, t };
+        let params = Params {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
@@ -252,8 +261,11 @@ mod tests {
     fn test_sub() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 16;
-        let t: u64 = 8;
-        let params = Params { q, n, t };
+        let t: u64 = 4;
+        let params = Params {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();

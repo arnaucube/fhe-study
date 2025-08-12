@@ -25,7 +25,7 @@ pub use matrix::Matrix;
 // pub use torus::T64;
 pub use zq::Zq;
 
-pub use ring::Ring;
+pub use ring::{Ring, RingParam};
 pub use ring_n::R;
 pub use ring_nq::Rq;
 // pub use ring_torus::Tn;

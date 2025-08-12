@@ -16,11 +16,14 @@ pub struct T64(pub u64);
 // `Tn<1>`.
 impl Ring for T64 {
     type C = T64;
-    type Params = ();
+    // type Param = ();
 
     // const Q: u64 = u64::MAX; // WIP
     // const N: usize = 1;
 
+    fn param(&self) -> Self::Param {
+        ()
+    }
     fn coeffs(&self) -> Vec<T64> {
         vec![self.clone()]
     }

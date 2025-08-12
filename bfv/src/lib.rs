@@ -10,18 +10,26 @@ use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops;
 
-use arith::{Ring, Rq, R};
+use arith::{Ring, RingParam, Rq, R};
 
 // error deviation for the Gaussian(Normal) distribution
 // sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5
 const ERR_SIGMA: f64 = 3.2;
 
 #[derive(Clone, Copy, Debug)]
-pub struct Params {
-    q: u64,
-    n: usize,
+pub struct Param {
+    ring: RingParam,
     t: u64,
     p: u64,
+}
+impl Param {
+    // returns the plaintext params
+    pub fn pt(&self) -> RingParam {
+        RingParam {
+            q: self.t,
+            n: self.ring.n,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -49,7 +57,7 @@ impl RLWE {
     }
 
     fn tensor(t: u64, a: &Self, b: &Self) -> (Rq, Rq, Rq) {
-        let (q, n) = (a.0.q, a.0.n);
+        let (q, n) = (a.0.param.q, a.0.param.n);
         // expand Q->PQ // TODO rm
 
         // get the coefficients in Z, ie. interpret a,b \in R (instead of R_q)
@@ -83,7 +91,10 @@ impl RLWE {
 }
 // naive mul in the ring Rq, reusing the ring_n::naive_mul and then applying mod(X^N +1)
 fn tmp_naive_mul(a: Rq, b: Rq) -> Rq {
-    Rq::from_vec_i64(a.q, a.n, arith::ring_n::naive_mul(&a.to_r(), &b.to_r()))
+    Rq::from_vec_i64(
+        &a.param.clone(),
+        arith::ring_n::naive_mul(&a.to_r(), &b.to_r()),
+    )
 }
 
 impl ops::Add<RLWE> for RLWE {
@@ -106,7 +117,7 @@ impl BFV {
     // const DELTA: u64 = Q / T; // floor
 
     /// generate a new key pair (privK, pubK)
-    pub fn new_key(mut rng: impl Rng, params: &Params) -> Result<(SecretKey, PublicKey)> {
+    pub fn new_key(mut rng: impl Rng, params: &Param) -> Result<(SecretKey, PublicKey)> {
         // WIP: review probabilities
 
         // let Xi_key = Uniform::new(-1_f64, 1_f64);
@@ -115,47 +126,45 @@ impl BFV {
 
         // secret key
         // let mut s = Rq::rand_f64(&mut rng, Xi_key)?;
-        let mut s = Rq::rand_u64(&mut rng, Xi_key, params.q, params.n)?;
+        let mut s = Rq::rand_u64(&mut rng, Xi_key, &params.ring)?;
         // since s is going to be multiplied by other Rq elements, already
         // compute its NTT
         s.compute_evals();
 
         // pk = (-a * s + e, a)
-        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, params.q), params.q, params.n)?;
-        let e = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, params.ring.q), &params.ring)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
         let pk: PublicKey = PublicKey(&(&(-a.clone()) * &s) + &e, a.clone()); // TODO rm clones
         Ok((SecretKey(s), pk))
     }
 
     // note: m is modulus t
-    pub fn encrypt(mut rng: impl Rng, params: &Params, pk: &PublicKey, m: &Rq) -> Result<RLWE> {
+    pub fn encrypt(mut rng: impl Rng, params: &Param, pk: &PublicKey, m: &Rq) -> Result<RLWE> {
         // assert params & inputs
-        debug_assert_eq!(params.q, pk.0.q);
-        debug_assert_eq!(params.n, pk.0.n);
-        debug_assert_eq!(params.t, m.q);
-        debug_assert_eq!(params.n, m.n);
+        debug_assert_eq!(params.ring, pk.0.param);
+        debug_assert_eq!(params.t, m.param.q);
+        debug_assert_eq!(params.ring.n, m.param.n);
 
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         // let Xi_key = Uniform::new(0_u64, 2_u64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let u = Rq::rand_f64(&mut rng, Xi_key, params.q, params.n)?;
+        let u = Rq::rand_f64(&mut rng, Xi_key, &params.ring)?;
         // let u = Rq::rand_u64(&mut rng, Xi_key)?;
-        let e_1 = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
-        let e_2 = Rq::rand_f64(&mut rng, Xi_err, params.q, params.n)?;
+        let e_1 = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
+        let e_2 = Rq::rand_f64(&mut rng, Xi_err, &params.ring)?;
 
         // migrate m's coeffs to the bigger modulus Q (from T)
-        let m = m.remodule(params.q);
-        let c0 = &pk.0 * &u + e_1 + m * (params.q / params.t); // floor(q/t)=DELTA
+        let m = m.remodule(params.ring.q);
+        let c0 = &pk.0 * &u + e_1 + m * (params.ring.q / params.t); // floor(q/t)=DELTA
         let c1 = &pk.1 * &u + e_2;
         Ok(RLWE(c0, c1))
     }
 
-    pub fn decrypt(params: &Params, sk: &SecretKey, c: &RLWE) -> Rq {
-        debug_assert_eq!(params.q, sk.0.q);
-        debug_assert_eq!(params.n, sk.0.n);
-        debug_assert_eq!(params.q, c.0.q);
-        debug_assert_eq!(params.n, c.0.n);
+    pub fn decrypt(param: &Param, sk: &SecretKey, c: &RLWE) -> Rq {
+        debug_assert_eq!(param.ring, sk.0.param);
+        debug_assert_eq!(param.ring.q, c.0.param.q);
+        debug_assert_eq!(param.ring.n, c.0.param.n);
 
         let cs: Rq = &c.0 + &(&c.1 * &sk.0); // done in mod q
 
@@ -164,49 +173,51 @@ impl BFV {
         // let c1s = Rq::from_vec_i64(c1s);
         // let cs = c.0 + c1s;
 
-        let r: Rq = cs.mul_div_round(params.t, params.q);
-        r.remodule(params.t)
+        let r: Rq = cs.mul_div_round(param.t, param.ring.q);
+        r.remodule(param.t)
     }
 
     fn add_const(c: &RLWE, m: &Rq) -> RLWE {
-        let q = c.0.q;
-        let t = m.q;
+        let q = c.0.param.q;
+        let t = m.param.q;
 
         // assuming T<Q, move m from Zq<T> to Zq<Q>
-        let m = m.remodule(c.0.q);
+        let m = m.remodule(c.0.param.q);
         // TODO rm clones
         RLWE(c.0.clone() + m * (q / t), c.1.clone()) // floor(q/t)=DELTA
     }
     fn mul_const(rlk: &RLK, c: &RLWE, m: &Rq) -> RLWE {
         // let pq = rlk.0.q;
-        let q = c.0.q;
-        let n = c.0.n;
-        let t = m.q;
+        let q = c.0.param.q;
+        let t = m.param.q;
 
         // assuming T<Q, move m from Zq<T> to Zq<Q>
         let m = m.remodule(q);
 
         // encrypt m*Delta without noise, and then perform normal ciphertext multiplication
-        let md = RLWE(m * (q / t), Rq::zero((q, n))); // floor(q/t)=DELTA
+        let md = RLWE(m * (q / t), Rq::zero(&c.0.param)); // floor(q/t)=DELTA
         RLWE::mul(t, &rlk, &c, &md)
     }
 
-    fn rlk_key(mut rng: impl Rng, params: &Params, s: &SecretKey) -> Result<RLK> {
-        let pq = params.p * params.q;
-        let n = params.n;
+    fn rlk_key(mut rng: impl Rng, param: &Param, s: &SecretKey) -> Result<RLK> {
+        let pq = param.p * param.ring.q;
+        let rlk_param = RingParam {
+            q: pq,
+            n: param.ring.n,
+        };
 
         // TODO review using Xi' instead of Xi
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
         // let Xi_err = Normal::new(0_f64, 0.0)?;
         let s = s.0.remodule(pq);
-        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, pq), pq, n)?;
-        let e = Rq::rand_f64(&mut rng, Xi_err, pq, n)?;
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, pq), &rlk_param)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &rlk_param)?;
 
         // let rlk: RLK<PQ, N> = RLK::<PQ, N>(-(&a * &s + e) + (s * s) * P, a.clone());
         // TODO rm clones
         let rlk: RLK = RLK(
             -(tmp_naive_mul(a.clone(), s.clone()) + e)
-                + tmp_naive_mul(s.clone(), s.clone()) * params.p,
+                + tmp_naive_mul(s.clone(), s.clone()) * param.p,
             a.clone(),
         );
 
@@ -214,10 +225,10 @@ impl BFV {
     }
 
     fn relinearize(rlk: &RLK, c0: &Rq, c1: &Rq, c2: &Rq) -> RLWE {
-        let pq = rlk.0.q;
-        let q = c0.q;
+        let pq = rlk.0.param.q;
+        let param = c0.param;
+        let q = param.q;
         let p = pq / q;
-        let n = c0.n;
 
         let c2rlk0: Vec<f64> = (c2.clone().to_r() * rlk.0.clone().to_r())
             .coeffs()
@@ -231,17 +242,17 @@ impl BFV {
             .map(|e| (*e as f64 / p as f64).round())
             .collect();
 
-        let r0 = Rq::from_vec_f64(q, n, c2rlk0);
-        let r1 = Rq::from_vec_f64(q, n, c2rlk1);
+        let r0 = Rq::from_vec_f64(&param, c2rlk0);
+        let r1 = Rq::from_vec_f64(&param, c2rlk1);
 
         let res = RLWE(c0 + &r0, c1 + &r1);
         res
     }
     fn relinearize_204(rlk: &RLK, c0: &Rq, c1: &Rq, c2: &Rq) -> RLWE {
-        let pq = rlk.0.q;
-        let q = c0.q;
+        let pq = rlk.0.param.q;
+        let q = c0.param.q;
         let p = pq / q;
-        let n = c0.n;
+        let n = c0.param.n;
         // TODO (in debug) check that all Ns match
 
         // let c2rlk0: Rq<PQ, N> = c2.remodule::<PQ>() * rlk.0.remodule::<PQ>();
@@ -269,9 +280,11 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
-        let params = Params {
-            q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
-            n: 512,
+        let params = Param {
+            ring: RingParam {
+                q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
+                n: 512,
+            },
             t: 32, // plaintext modulus
             p: 0,  // unused in this test
         };
@@ -282,7 +295,7 @@ mod tests {
             let (sk, pk) = BFV::new_key(&mut rng, &params)?;
 
             let msg_dist = Uniform::new(0_u64, params.t);
-            let m = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
+            let m = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
 
             let c = BFV::encrypt(&mut rng, &params, &pk, &m)?;
             let m_recovered = BFV::decrypt(&params, &sk, &c);
@@ -295,9 +308,11 @@ mod tests {
 
     #[test]
     fn test_addition() -> Result<()> {
-        let params = Params {
-            q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
-            n: 128,
+        let params = Param {
+            ring: RingParam {
+                q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
+                n: 128,
+            },
             t: 32, // plaintext modulus
             p: 0,  // unused in this test
         };
@@ -308,8 +323,8 @@ mod tests {
             let (sk, pk) = BFV::new_key(&mut rng, &params)?;
 
             let msg_dist = Uniform::new(0_u64, params.t);
-            let m1 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
-            let m2 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
 
             let c1 = BFV::encrypt(&mut rng, &params, &pk, &m1)?;
             let c2 = BFV::encrypt(&mut rng, &params, &pk, &m2)?;
@@ -327,9 +342,8 @@ mod tests {
     #[test]
     fn test_constant_add_mul() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
-        let params = Params {
-            q,
-            n: 16,
+        let params = Param {
+            ring: RingParam { q, n: 16 },
             t: 8, // plaintext modulus
             p: q * q,
         };
@@ -339,8 +353,8 @@ mod tests {
         let (sk, pk) = BFV::new_key(&mut rng, &params)?;
 
         let msg_dist = Uniform::new(0_u64, params.t);
-        let m1 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
-        let m2_const = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
+        let m1 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
+        let m2_const = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
         let c1 = BFV::encrypt(&mut rng, &params, &pk, &m1)?;
 
         let c3_add = &c1 + &m2_const;
@@ -490,9 +504,8 @@ mod tests {
     #[test]
     fn test_tensor() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
-        let params = Params {
-            q,
-            n: 16,
+        let params = Param {
+            ring: RingParam { q, n: 16 },
             t: 2, // plaintext modulus
             p: q * q,
         };
@@ -500,15 +513,15 @@ mod tests {
 
         let msg_dist = Uniform::new(0_u64, params.t);
         for _ in 0..1_000 {
-            let m1 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
-            let m2 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
 
             test_tensor_opt(&mut rng, &params, m1, m2)?;
         }
 
         Ok(())
     }
-    fn test_tensor_opt(mut rng: impl Rng, params: &Params, m1: Rq, m2: Rq) -> Result<()> {
+    fn test_tensor_opt(mut rng: impl Rng, params: &Param, m1: Rq, m2: Rq) -> Result<()> {
         let (sk, pk) = BFV::new_key(&mut rng, &params)?;
 
         let c1 = BFV::encrypt(&mut rng, &params, &pk, &m1)?;
@@ -526,7 +539,7 @@ mod tests {
         //         &c_c.to_r(),
         //         &R::<N>::from_vec(arith::ring_n::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
         //     ));
-        let m3: Rq = m3.mul_div_round(params.t, params.q); // descale
+        let m3: Rq = m3.mul_div_round(params.t, params.ring.q); // descale
         let m3 = m3.remodule(params.t);
 
         let naive = (m1.clone().to_r() * m2.clone().to_r()).to_rq(params.t); // TODO rm clones
@@ -544,9 +557,8 @@ mod tests {
     #[test]
     fn test_mul_relin() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
-        let params = Params {
-            q,
-            n: 16,
+        let params = Param {
+            ring: RingParam { q, n: 16 },
             t: 2, // plaintext modulus
             p: q * q,
         };
@@ -555,8 +567,8 @@ mod tests {
         let msg_dist = Uniform::new(0_u64, params.t);
 
         for _ in 0..1_000 {
-            let m1 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
-            let m2 = Rq::rand_u64(&mut rng, msg_dist, params.t, params.n)?;
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &params.pt())?;
 
             test_mul_relin_opt(&mut rng, &params, m1, m2)?;
         }
@@ -564,7 +576,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_mul_relin_opt(mut rng: impl Rng, params: &Params, m1: Rq, m2: Rq) -> Result<()> {
+    fn test_mul_relin_opt(mut rng: impl Rng, params: &Param, m1: Rq, m2: Rq) -> Result<()> {
         let (sk, pk) = BFV::new_key(&mut rng, &params)?;
 
         let rlk = BFV::rlk_key(&mut rng, &params, &sk)?;

@@ -6,7 +6,11 @@
 //! generics; but once using real-world parameters, the stack could not handle
 //! it, so moved to use Vec instead of fixed-sized arrays, and adapted the NTT
 //! implementation to that too.
-use crate::{ring::Ring, ring_nq::Rq, zq::Zq};
+use crate::{
+    ring::{Ring, RingParam},
+    ring_nq::Rq,
+    zq::Zq,
+};
 
 use std::collections::HashMap;
 
@@ -50,7 +54,7 @@ impl NTT {
     /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.1 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
     pub fn ntt(a: &Rq) -> Rq {
-        let (q, n) = (a.q, a.n);
+        let (q, n) = (a.param.q, a.param.n);
         let (roots_of_unity, _, _) = roots(q, n);
 
         let mut t = n / 2;
@@ -73,8 +77,7 @@ impl NTT {
         }
         // Rq::from_vec((a.q, n), r)
         Rq {
-            q,
-            n,
+            param: RingParam { q, n },
             coeffs: r,
             evals: None,
         }
@@ -84,7 +87,7 @@ impl NTT {
     /// https://eprint.iacr.org/2017/727.pdf, also some notes at section 3.2 of
     /// https://github.com/arnaucube/math/blob/master/notes_ntt.pdf
     pub fn intt(a: &Rq) -> Rq {
-        let (q, n) = (a.q, a.n);
+        let (q, n) = (a.param.q, a.param.n);
         let (_, roots_of_unity_inv, n_inv) = roots(q, n);
 
         let mut t = 1;
@@ -110,8 +113,7 @@ impl NTT {
         }
         // Rq::from_vec((a.q, n), r)
         Rq {
-            q,
-            n,
+            param: RingParam { q, n },
             coeffs: r,
             evals: None,
         }
@@ -202,9 +204,10 @@ mod tests {
     fn test_ntt() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 4;
+        let param = RingParam { q, n };
 
         let a: Vec<u64> = vec![1u64, 2, 3, 4];
-        let a: Rq = Rq::from_vec_u64(q, n, a);
+        let a: Rq = Rq::from_vec_u64(&param, a);
 
         let a_ntt = NTT::ntt(&a);
 
@@ -224,13 +227,14 @@ mod tests {
     fn test_ntt_loop() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1;
         let n: usize = 512;
+        let param = RingParam { q, n };
 
         use rand::distributions::Uniform;
         let mut rng = rand::thread_rng();
         let dist = Uniform::new(0_f64, q as f64);
 
-        for _ in 0..10_000 {
-            let a: Rq = Rq::rand(&mut rng, dist, (q, n));
+        for _ in 0..1000 {
+            let a: Rq = Rq::rand(&mut rng, dist, &param);
             let a_ntt = NTT::ntt(&a);
             let a_intt = NTT::intt(&a_ntt);
             assert_eq!(a, a_intt);

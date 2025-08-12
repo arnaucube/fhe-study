@@ -11,7 +11,7 @@ use std::{
     ops::{Add, Mul, Neg, Sub},
 };
 
-use crate::Ring;
+use crate::{Ring, RingParam};
 
 /// Tuple of K Ring (Rq) elements. We use Vec<R> to allocate it in the heap,
 /// since if using a fixed-size array it would overflow the stack.
@@ -28,7 +28,7 @@ impl<R: Ring> TR<R> {
         assert_eq!(r.len(), k);
         Self { k, r }
     }
-    pub fn zero(k: usize, r_params: R::Params) -> Self {
+    pub fn zero(k: usize, r_params: &RingParam) -> Self {
         Self {
             k,
             r: (0..k).into_iter().map(|_| R::zero(r_params)).collect(),
@@ -38,7 +38,7 @@ impl<R: Ring> TR<R> {
         mut rng: impl Rng,
         dist: impl Distribution<f64>,
         k: usize,
-        r_params: R::Params,
+        r_params: &RingParam,
     ) -> Self {
         Self {
             k,

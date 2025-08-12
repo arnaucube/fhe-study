@@ -23,7 +23,7 @@ pub struct R {
 // impl<const N: usize> Ring for R<N> {
 impl R {
     // type C = i64;
-    // type Params = usize; // n
+    // type Param = usize; // n
 
     // const Q: u64 = i64::MAX as u64; // WIP
     // const N: usize = N;
@@ -87,7 +87,10 @@ impl R {
 
 impl From<crate::ring_nq::Rq> for R {
     fn from(rq: crate::ring_nq::Rq) -> Self {
-        Self::from_vec_u64(rq.n, rq.coeffs().to_vec().iter().map(|e| e.v).collect())
+        Self::from_vec_u64(
+            rq.param.n,
+            rq.coeffs().to_vec().iter().map(|e| e.v).collect(),
+        )
     }
 }
 
@@ -150,7 +153,7 @@ pub fn mul_div_round(q: u64, n: usize, v: Vec<i64>, num: u64, den: u64) -> crate
         .map(|e| ((num as f64 * *e as f64) / den as f64).round())
         .collect();
     // dbg!(&r);
-    crate::Rq::from_vec_f64(q, n, r)
+    crate::Rq::from_vec_f64(&crate::ring::RingParam { q, n }, r)
 }
 
 // TODO rename to make it clear that is not mod q, but mod X^N+1

@@ -25,11 +25,14 @@ pub struct Tn {
 
 impl Ring for Tn {
     type C = T64;
-    type Params = usize; // n
+    type Param = usize; // n
 
     // const Q: u64 = u64::MAX; // WIP
     // const N: usize = N;
 
+    fn param(&self) -> Self::Param {
+        self.n
+    }
     fn coeffs(&self) -> Vec<T64> {
         self.coeffs.to_vec()
     }
