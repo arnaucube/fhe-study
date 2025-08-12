@@ -13,51 +13,62 @@ use std::array;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
-use crate::{ring::Ring, torus::T64, Rq, Zq};
+use crate::{
+    ring::{Ring, RingParam},
+    torus::T64,
+    Rq, Zq,
+};
 
 /// 𝕋_<N,Q>[X] = 𝕋<Q>[X]/(X^N +1), polynomials modulo X^N+1 with coefficients in
 /// 𝕋, where Q=2^64.
 #[derive(Clone, Debug)]
 pub struct Tn {
-    pub n: usize,
+    // pub n: usize,
+    pub param: RingParam,
     pub coeffs: Vec<T64>,
 }
 
 impl Ring for Tn {
     type C = T64;
-    type Param = usize; // n
+    // type Param = usize; // n
 
     // const Q: u64 = u64::MAX; // WIP
     // const N: usize = N;
 
-    fn param(&self) -> Self::Param {
-        self.n
+    fn param(&self) -> RingParam {
+        RingParam {
+            q: u64::MAX,
+            n: self.param.n,
+        }
     }
     fn coeffs(&self) -> Vec<T64> {
         self.coeffs.to_vec()
     }
 
-    fn zero(n: usize) -> Self {
+    fn zero(param: &RingParam) -> Self {
         Self {
-            n,
-            coeffs: vec![T64::zero(()); n],
+            param: *param,
+            coeffs: vec![T64::zero(param); param.n],
         }
     }
 
-    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, n: usize) -> Self {
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, param: &RingParam) -> Self {
         Self {
-            n,
-            coeffs: std::iter::repeat_with(|| T64::rand(&mut rng, &dist, ()))
-                .take(n)
+            param: *param,
+            coeffs: std::iter::repeat_with(|| T64::rand(&mut rng, &dist, &param))
+                .take(param.n)
                 .collect(),
         }
         // Self(array::from_fn(|_| T64::rand(&mut rng, &dist)))
     }
 
-    fn from_vec(n: usize, coeffs: Vec<Self::C>) -> Self {
+    fn from_vec(param: &RingParam, coeffs: Vec<Self::C>) -> Self {
         let mut p = coeffs;
-        modulus(n, &mut p);
-        Self { n, coeffs: p }
+        modulus(param, &mut p);
+        Self {
+            param: *param,
+            coeffs: p,
+        }
     }
 
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
@@ -68,7 +79,7 @@ impl Ring for Tn {
             .collect();
         // convert it to Tn
         r.iter()
-            .map(|a_i| Self::from_vec(self.n, a_i.clone()))
+            .map(|a_i| Self::from_vec(&self.param, a_i.clone()))
             .collect()
     }
 
@@ -87,8 +98,10 @@ impl Ring for Tn {
             .map(|c_i| Zq::from_u64(p, c_i.mod_switch(p).0))
             .collect();
         Rq {
-            q: p,
-            n: self.n,
+            param: RingParam {
+                q: p,
+                n: self.param.n,
+            },
             coeffs,
             evals: None,
         }
@@ -103,14 +116,14 @@ impl Ring for Tn {
             .iter()
             .map(|e| T64(((num as f64 * e.0 as f64) / den as f64).round() as u64))
             .collect();
-        Self::from_vec(self.n, r)
+        Self::from_vec(&self.param, r)
     }
 }
 
 impl Tn {
     // multiply self by X^-h
     pub fn left_rotate(&self, h: usize) -> Self {
-        let n = self.n;
+        let n = self.param.n;
 
         let h = h % n;
         assert!(h < n);
@@ -122,23 +135,24 @@ impl Tn {
             .copied()
             .chain(c[0..h].iter().map(|&x| -x))
             .collect();
-        Self::from_vec(self.n, r)
+        Self::from_vec(&self.param, r)
     }
 
-    pub fn from_vec_u64(n: usize, v: Vec<u64>) -> Self {
+    pub fn from_vec_u64(param: &RingParam, v: Vec<u64>) -> Self {
         let coeffs = v.iter().map(|c| T64(*c)).collect();
-        Self::from_vec(n, coeffs)
+        Self::from_vec(param, coeffs)
     }
 }
 
 // apply mod (X^N+1)
-pub fn modulus(n: usize, p: &mut Vec<T64>) {
+pub fn modulus(param: &RingParam, p: &mut Vec<T64>) {
+    let n = param.n;
     if p.len() < n {
         return;
     }
     for i in n..p.len() {
         p[i - n] = p[i - n].clone() - p[i].clone();
-        p[i] = T64::zero(());
+        p[i] = T64::zero(param);
     }
     p.truncate(n);
 }
@@ -148,9 +162,9 @@ impl Add<Tn> for Tn {
 
     fn add(self, rhs: Self) -> Self {
         // Self(array::from_fn(|i| self.0[i] + rhs.0[i]))
-        assert_eq!(self.n, rhs.n);
+        assert_eq!(self.param, rhs.param);
         Self {
-            n: self.n,
+            param: self.param,
             coeffs: zip_eq(self.coeffs, rhs.coeffs)
                 .map(|(l, r)| l + r)
                 .collect(),
@@ -162,9 +176,9 @@ impl Add<&Tn> for &Tn {
 
     fn add(self, rhs: &Tn) -> Self::Output {
         // Tn(array::from_fn(|i| self.0[i] + rhs.0[i]))
-        assert_eq!(self.n, rhs.n);
+        assert_eq!(self.param, rhs.param);
         Tn {
-            n: self.n,
+            param: self.param,
             coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
                 .map(|(l, r)| l + r)
                 .collect(),
@@ -173,15 +187,15 @@ impl Add<&Tn> for &Tn {
 }
 impl AddAssign for Tn {
     fn add_assign(&mut self, rhs: Self) {
-        assert_eq!(self.n, rhs.n);
-        for i in 0..self.n {
+        assert_eq!(self.param, rhs.param);
+        for i in 0..self.param.n {
             self.coeffs[i] += rhs.coeffs[i];
         }
     }
 }
 
 impl Sum<Tn> for Tn {
-    fn sum<I>(iter: I) -> Self
+    fn sum<I>(mut iter: I) -> Self
     where
         I: Iterator<Item = Self>,
     {
@@ -190,7 +204,7 @@ impl Sum<Tn> for Tn {
         //     acc += e;
         // }
         // acc
-        let first = *iter.next().unwrap().borrow();
+        let first = iter.next().unwrap();
         iter.fold(first, |acc, x| acc + x)
     }
 }
@@ -199,9 +213,9 @@ impl Sub<Tn> for Tn {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        assert_eq!(self.n, rhs.n);
+        assert_eq!(self.param, rhs.param);
         Self {
-            n: self.n,
+            param: self.param,
             coeffs: zip_eq(self.coeffs, rhs.coeffs)
                 .map(|(l, r)| l - r)
                 .collect(),
@@ -213,9 +227,9 @@ impl Sub<&Tn> for &Tn {
 
     fn sub(self, rhs: &Tn) -> Self::Output {
         // Tn(array::from_fn(|i| self.0[i] - rhs.0[i]))
-        assert_eq!(self.n, rhs.n);
+        assert_eq!(self.param, rhs.param);
         Tn {
-            n: self.n,
+            param: self.param,
             coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
                 .map(|(l, r)| l - r)
                 .collect(),
@@ -228,8 +242,8 @@ impl SubAssign for Tn {
         // for i in 0..N {
         //     self.0[i] -= rhs.0[i];
         // }
-        assert_eq!(self.n, rhs.n);
-        for i in 0..self.n {
+        assert_eq!(self.param, rhs.param);
+        for i in 0..self.param.n {
             self.coeffs[i] -= rhs.coeffs[i];
         }
     }
@@ -241,7 +255,7 @@ impl Neg for Tn {
     fn neg(self) -> Self::Output {
         // Tn(array::from_fn(|i| -self.0[i]))
         Self {
-            n: self.n,
+            param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| -*c_i).collect(),
         }
     }
@@ -249,7 +263,7 @@ impl Neg for Tn {
 
 impl PartialEq for Tn {
     fn eq(&self, other: &Self) -> bool {
-        self.coeffs == other.coeffs && self.n == other.n
+        self.coeffs == other.coeffs && self.param == other.param
     }
 }
 
@@ -269,8 +283,9 @@ impl Mul<&Tn> for &Tn {
 }
 
 fn naive_poly_mul(poly1: &Tn, poly2: &Tn) -> Tn {
-    assert_eq!(poly1.n, poly2.n);
-    let n = poly1.n;
+    assert_eq!(poly1.param, poly2.param);
+    let n = poly1.param.n;
+    let param = poly1.param;
 
     let poly1: Vec<u128> = poly1.coeffs.iter().map(|c| c.0 as u128).collect();
     let poly2: Vec<u128> = poly2.coeffs.iter().map(|c| c.0 as u128).collect();
@@ -285,7 +300,7 @@ fn naive_poly_mul(poly1: &Tn, poly2: &Tn) -> Tn {
     modulus_u128(n, &mut result);
 
     Tn {
-        n,
+        param,
         // coeffs: array::from_fn(|i| T64(result[i] as u64)),
         coeffs: result.iter().map(|r_i| T64(*r_i as u64)).collect(),
     }
@@ -306,7 +321,7 @@ impl Mul<T64> for Tn {
     type Output = Self;
     fn mul(self, s: T64) -> Self {
         Self {
-            n: self.n,
+            param: self.param,
             // coeffs: array::from_fn(|i| self.coeffs[i] * s),
             coeffs: self.coeffs.iter().map(|c_i| *c_i * s).collect(),
         }
@@ -318,7 +333,7 @@ impl Mul<u64> for Tn {
     fn mul(self, s: u64) -> Self {
         // Self(array::from_fn(|i| self.0[i] * s))
         Tn {
-            n: self.n,
+            param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| *c_i * s).collect(),
         }
     }
@@ -327,8 +342,8 @@ impl Mul<&u64> for &Tn {
     type Output = Tn;
     fn mul(self, s: &u64) -> Self::Output {
         // Tn::<N>(array::from_fn(|i| self.0[i] * *s))
-        Self {
-            n: self.n,
+        Tn {
+            param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| c_i * s).collect(),
         }
     }
@@ -340,9 +355,9 @@ mod tests {
 
     #[test]
     fn test_left_rotate() {
-        let n: usize = 4;
+        let param = RingParam { q: u64::MAX, n: 4 };
         let f = Tn::from_vec(
-            n,
+            &param,
             vec![2i64, 3, -4, -1]
                 .iter()
                 .map(|c| T64(*c as u64))
@@ -353,7 +368,7 @@ mod tests {
         assert_eq!(
             f.left_rotate(3),
             Tn::from_vec(
-                n,
+                &param,
                 vec![-1i64, -2, -3, 4]
                     .iter()
                     .map(|c| T64(*c as u64))
@@ -364,7 +379,7 @@ mod tests {
         assert_eq!(
             f.left_rotate(1),
             Tn::from_vec(
-                n,
+                &param,
                 vec![3i64, -4, -1, -2]
                     .iter()
                     .map(|c| T64(*c as u64))

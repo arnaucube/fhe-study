@@ -241,4 +241,27 @@ mod tests {
         }
         Ok(())
     }
+
+    // #[test]
+    // fn test_ntt_loop_2() -> Result<()> {
+    //     // let q: u64 = 2u64.pow(16) + 1;
+    //     // let n: usize = 512;
+    //     let q: u64 = 35184371138561;
+    //     let n: usize = 1 << 14;
+    //     let param = RingParam { q, n };
+    //
+    //     use rand::distributions::Uniform;
+    //     let mut rng = rand::thread_rng();
+    //     let dist = Uniform::new(0_f64, q as f64);
+    //
+    //     let a: Rq = Rq::rand(&mut rng, dist, &param);
+    //     let start = std::time::Instant::now();
+    //     for _ in 0..10_000 {
+    //         let a_ntt = NTT::ntt(&a);
+    //         let a_intt = NTT::intt(&a_ntt);
+    //         assert_eq!(a, a_intt);
+    //     }
+    //     dbg!(start.elapsed());
+    //     Ok(())
+    // }
 }

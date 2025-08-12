@@ -113,7 +113,7 @@ impl<R: Ring> Neg for TR<R> {
     fn neg(self) -> Self::Output {
         Self {
             k: self.k,
-            r: self.r.iter().map(|e_i| -*e_i).collect(),
+            r: self.r.iter().map(|e_i| -e_i.clone()).collect(),
         }
     }
 }

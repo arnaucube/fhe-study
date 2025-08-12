@@ -4,7 +4,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use crate::ring::Ring;
+use crate::ring::{Ring, RingParam};
 
 /// Let 𝕋 = ℝ/ℤ, where 𝕋 is a ℤ-module, with homogeneous external product.
 /// Let 𝕋q
@@ -21,20 +21,23 @@ impl Ring for T64 {
     // const Q: u64 = u64::MAX; // WIP
     // const N: usize = 1;
 
-    fn param(&self) -> Self::Param {
-        ()
+    fn param(&self) -> RingParam {
+        RingParam {
+            q: u64::MAX, // WIP
+            n: 1,
+        }
     }
     fn coeffs(&self) -> Vec<T64> {
         vec![self.clone()]
     }
-    fn zero(_: ()) -> Self {
+    fn zero(_: &RingParam) -> Self {
         Self(0u64)
     }
-    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, _: ()) -> Self {
+    fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, _: &RingParam) -> Self {
         let r: f64 = dist.sample(&mut rng);
         Self(r.round() as u64)
     }
-    fn from_vec(_n: (), coeffs: Vec<Self::C>) -> Self {
+    fn from_vec(_n: &RingParam, coeffs: Vec<Self::C>) -> Self {
         assert_eq!(coeffs.len(), 1);
         coeffs[0]
     }
@@ -178,9 +181,13 @@ mod tests {
         let d = x.decompose(beta, l);
         assert_eq!(recompose(d), T64(u64::MAX - 1));
 
+        let param = RingParam {
+            q: u64::MAX, // WIP
+            n: 1,
+        };
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
-            let x = T64::rand(&mut rng, Standard, ());
+            let x = T64::rand(&mut rng, Standard, &param);
             let d = x.decompose(beta, l);
             assert_eq!(recompose(d), x);
         }
