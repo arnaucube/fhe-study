@@ -1,5 +1,4 @@
 use rand::{distributions::Distribution, Rng};
-use std::borrow::Borrow;
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 

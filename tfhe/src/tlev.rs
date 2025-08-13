@@ -4,32 +4,48 @@ use rand::Rng;
 use std::array;
 use std::ops::{Add, Mul};
 
-use arith::{Ring, Rq, Tn, T64, TR};
+use arith::{Ring, RingParam, Rq, Tn, T64, TR};
 
 use crate::tglwe::TGLWE;
 use crate::tlwe::{PublicKey, SecretKey, TLWE};
+use gfhe::glwe::Param;
 
 #[derive(Clone, Debug)]
-pub struct TLev<const K: usize>(pub(crate) Vec<TLWE<K>>);
+pub struct TLev(pub(crate) Vec<TLWE>);
 
-impl<const K: usize> TLev<K> {
-    pub fn encode<const T: u64>(m: &Rq<T, 1>) -> T64 {
+impl TLev {
+    pub fn encode(param: &Param, m: &Rq) -> T64 {
+        assert_eq!(m.param.n, 1);
+        assert_eq!(param.t, m.param.q);
+
         let coeffs = m.coeffs();
-        T64(coeffs[0].0) // N=1, so take the only coeff
+        T64(coeffs[0].v) // N=1, so take the only coeff
     }
-    pub fn decode<const T: u64>(p: &T64) -> Rq<T, 1> {
-        Rq::<T, 1>::from_vec_u64(p.coeffs().iter().map(|c| c.0).collect())
+    pub fn decode(param: &Param, p: &T64) -> Rq {
+        Rq::from_vec_u64(
+            // &RingParam { q: u64::MAX, n: 1 },
+            &RingParam { q: param.t, n: 1 },
+            p.coeffs().iter().map(|c| c.0).collect(),
+        )
     }
     pub fn encrypt(
         mut rng: impl Rng,
+        param: &Param,
         beta: u32,
         l: u32,
-        pk: &PublicKey<K>,
+        pk: &PublicKey,
         m: &T64,
     ) -> Result<Self> {
-        let tlev: Vec<TLWE<K>> = (1..l + 1)
+        debug_assert_eq!(pk.1.k, param.k);
+
+        let tlev: Vec<TLWE> = (1..l + 1)
             .map(|i| {
-                TLWE::<K>::encrypt(&mut rng, pk, &(*m * (u64::MAX / beta.pow(i as u32) as u64)))
+                TLWE::encrypt(
+                    &mut rng,
+                    param,
+                    pk,
+                    &(*m * (u64::MAX / beta.pow(i as u32) as u64)),
+                )
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -37,12 +53,13 @@ impl<const K: usize> TLev<K> {
     }
     pub fn encrypt_s(
         mut rng: impl Rng,
+        param: &Param,
         _beta: u32, // TODO rm, and make beta=2 always
         l: u32,
-        sk: &SecretKey<K>,
+        sk: &SecretKey,
         m: &T64,
     ) -> Result<Self> {
-        let tlev: Vec<TLWE<K>> = (1..l as u64 + 1)
+        let tlev: Vec<TLWE> = (1..l as u64 + 1)
             .map(|i| {
                 let aux = if i < 64 {
                     *m * (u64::MAX / (1u64 << i))
@@ -51,22 +68,22 @@ impl<const K: usize> TLev<K> {
                     // by it, which would be equal to 1
                     *m
                 };
-                TLWE::<K>::encrypt_s(&mut rng, sk, &aux)
+                TLWE::encrypt_s(&mut rng, &param, sk, &aux)
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self(tlev))
     }
 
-    pub fn decrypt(&self, sk: &SecretKey<K>, beta: u32) -> T64 {
+    pub fn decrypt(&self, sk: &SecretKey, beta: u32) -> T64 {
         let pt = self.0[0].decrypt(sk);
         pt.mul_div_round(beta as u64, u64::MAX)
     }
 }
 // TODO review u64::MAX, since is -1 of the value we actually want
 
-impl<const K: usize> TLev<K> {
-    pub fn iter(&self) -> std::slice::Iter<TLWE<K>> {
+impl TLev {
+    pub fn iter(&self) -> std::slice::Iter<TLWE> {
         self.0.iter()
     }
 }
@@ -74,14 +91,14 @@ impl<const K: usize> TLev<K> {
 // dot product between a TLev and Vec<T64>, usually Vec<T64> comes from a
 // decomposition of T64
 // TLev * Vec<T64> --> TLWE
-impl<const K: usize> Mul<Vec<T64>> for TLev<K> {
-    type Output = TLWE<K>;
+impl Mul<Vec<T64>> for TLev {
+    type Output = TLWE;
     fn mul(self, v: Vec<T64>) -> Self::Output {
         assert_eq!(self.0.len(), v.len());
 
         // l TLWES
-        let tlwes: Vec<TLWE<K>> = self.0;
-        let r: TLWE<K> = zip_eq(v, tlwes).map(|(a_d_i, glwe_i)| glwe_i * a_d_i).sum();
+        let tlwes: Vec<TLWE> = self.0;
+        let r: TLWE = zip_eq(v, tlwes).map(|(a_d_i, glwe_i)| glwe_i * a_d_i).sum();
         r
     }
 }
@@ -95,27 +112,29 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
-        const T: u64 = 2; // plaintext modulus
-        const K: usize = 16;
-        type S = TLev<K>;
+        let param = Param {
+            ring: RingParam { q: u64::MAX, n: 1 },
+            k: 16,
+            t: 2, // plaintext modulus
+        };
 
         let beta: u32 = 2;
         let l: u32 = 16;
 
         let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, T);
+        let msg_dist = Uniform::new(0_u64, param.t);
 
         for _ in 0..200 {
-            let (sk, pk) = TLWE::<K>::new_key(&mut rng)?;
+            let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
 
-            let m: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
-            let p: T64 = S::encode::<T>(&m); // plaintext
+            let m: Rq = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let p: T64 = TLev::encode(&param, &m); // plaintext
 
-            let c = S::encrypt(&mut rng, beta, l, &pk, &p)?;
+            let c = TLev::encrypt(&mut rng, &param, beta, l, &pk, &p)?;
             let p_recovered = c.decrypt(&sk, beta);
-            let m_recovered = S::decode::<T>(&p_recovered);
+            let m_recovered = TLev::decode(&param, &p_recovered);
 
-            assert_eq!(m.remodule::<T>(), m_recovered.remodule::<T>());
+            assert_eq!(m.remodule(param.t), m_recovered.remodule(param.t));
         }
 
         Ok(())
@@ -123,32 +142,35 @@ mod tests {
 
     #[test]
     fn test_tlev_vect64_product() -> Result<()> {
-        const T: u64 = 2; // plaintext modulus
-        const K: usize = 16;
+        let param = Param {
+            ring: RingParam { q: u64::MAX, n: 1 },
+            k: 16,
+            t: 2, // plaintext modulus
+        };
 
         let beta: u32 = 2;
         let l: u32 = 16;
 
         let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, T);
+        let msg_dist = Uniform::new(0_u64, param.t);
 
         for _ in 0..200 {
-            let (sk, pk) = TLWE::<K>::new_key(&mut rng)?;
+            let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
 
-            let m1: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
-            let m2: Rq<T, 1> = Rq::rand_u64(&mut rng, msg_dist)?;
-            let p1: T64 = TLev::<K>::encode::<T>(&m1);
-            let p2: T64 = TLev::<K>::encode::<T>(&m2);
+            let m1: Rq = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let m2: Rq = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let p1: T64 = TLev::encode(&param, &m1);
+            let p2: T64 = TLev::encode(&param, &m2);
 
-            let c1 = TLev::<K>::encrypt(&mut rng, beta, l, &pk, &p1)?;
+            let c1 = TLev::encrypt(&mut rng, &param, beta, l, &pk, &p1)?;
             let c2 = p2.decompose(beta, l);
 
             let c3 = c1 * c2;
 
             let p_recovered = c3.decrypt(&sk);
-            let m_recovered = TLev::<K>::decode::<T>(&p_recovered);
+            let m_recovered = TLev::decode(&param, &p_recovered);
 
-            assert_eq!((m1.to_r() * m2.to_r()).to_rq::<T>(), m_recovered);
+            assert_eq!((m1.to_r() * m2.to_r()).to_rq(param.t), m_recovered);
         }
 
         Ok(())

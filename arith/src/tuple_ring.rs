@@ -1,15 +1,9 @@
 //! This file implements the struct for an Tuple of Ring Rq elements and its
 //! operations, which are performed element-wise.
 
-use anyhow::Result;
 use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
-use rand_distr::{Normal, Uniform};
-use std::iter::Sum;
-use std::{
-    array,
-    ops::{Add, Mul, Neg, Sub},
-};
+use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{Ring, RingParam};
 
@@ -28,23 +22,23 @@ impl<R: Ring> TR<R> {
         assert_eq!(r.len(), k);
         Self { k, r }
     }
-    pub fn zero(k: usize, r_params: &RingParam) -> Self {
+    pub fn zero(k: usize, r_param: &RingParam) -> Self {
         Self {
             k,
-            r: (0..k).into_iter().map(|_| R::zero(r_params)).collect(),
+            r: (0..k).into_iter().map(|_| R::zero(r_param)).collect(),
         }
     }
     pub fn rand(
         mut rng: impl Rng,
         dist: impl Distribution<f64>,
         k: usize,
-        r_params: &RingParam,
+        r_param: &RingParam,
     ) -> Self {
         Self {
             k,
             r: (0..k)
                 .into_iter()
-                .map(|_| R::rand(&mut rng, &dist, r_params))
+                .map(|_| R::rand(&mut rng, &dist, r_param))
                 .collect(),
         }
     }

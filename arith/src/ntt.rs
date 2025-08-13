@@ -6,11 +6,7 @@
 //! generics; but once using real-world parameters, the stack could not handle
 //! it, so moved to use Vec instead of fixed-sized arrays, and adapted the NTT
 //! implementation to that too.
-use crate::{
-    ring::{Ring, RingParam},
-    ring_nq::Rq,
-    zq::Zq,
-};
+use crate::{ring::RingParam, ring_nq::Rq, zq::Zq};
 
 use std::collections::HashMap;
 
@@ -197,6 +193,7 @@ const fn const_inv_mod(q: u64, x: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Ring;
 
     use anyhow::Result;
 

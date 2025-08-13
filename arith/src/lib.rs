@@ -19,7 +19,6 @@ pub mod tuple_ring;
 pub mod ntt;
 
 // expose objects
-
 pub use complex::C;
 pub use matrix::Matrix;
 pub use torus::T64;

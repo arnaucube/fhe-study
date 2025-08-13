@@ -1,16 +1,11 @@
 //! Polynomial ring Z[X]/(X^N+1)
 //!
 
-use anyhow::Result;
 use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
-use std::array;
-use std::borrow::Borrow;
 use std::fmt;
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-
-use crate::Ring;
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 // TODO rename to not have name conflicts with the Ring trait (R: Ring)
 // PolynomialRing element, where the PolynomialRing is R = Z[X]/(X^n +1)

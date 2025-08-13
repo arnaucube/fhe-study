@@ -4,8 +4,6 @@
 use anyhow::{anyhow, Result};
 use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
-use std::array;
-use std::borrow::Borrow;
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};

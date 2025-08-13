@@ -9,7 +9,6 @@
 
 use itertools::zip_eq;
 use rand::{distributions::Distribution, Rng};
-use std::array;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 

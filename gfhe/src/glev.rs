@@ -69,7 +69,7 @@ impl<R: Ring> GLev<R> {
 impl<R: Ring> Mul<Vec<R>> for GLev<R> {
     type Output = GLWE<R>;
     fn mul(self, v: Vec<R>) -> GLWE<R> {
-        // TODO debug_assert_eq of params
+        // TODO debug_assert_eq of param
 
         // l times GLWES
         let glwes: Vec<GLWE<R>> = self.0;

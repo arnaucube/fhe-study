@@ -22,11 +22,28 @@ pub struct Param {
     pub t: u64,
 }
 impl Param {
-    // returns the plaintext params
+    /// returns the plaintext param
     pub fn pt(&self) -> RingParam {
+        // TODO think if maybe return a new truct "PtParam" to differenciate
+        // between the ciphertexxt (RingParam) and the plaintext param. Maybe it
+        // can be just a wrapper on top of RingParam.
         RingParam {
             q: self.t,
             n: self.ring.n,
+        }
+    }
+    /// returns the LWE param for the given GLWE (self), that is, it uses k=K*N
+    /// as the length for the secret key. This follows [2018-421] where
+    ///   TLWE sk:  s \in B^n , where n=K*N
+    ///   TRLWE sk: s \in B_N[X]^K
+    pub fn lwe(&self) -> Self {
+        Self {
+            ring: RingParam {
+                q: self.ring.q,
+                n: 1,
+            },
+            k: self.k * self.ring.n,
+            t: self.t,
         }
     }
 }
@@ -46,8 +63,8 @@ pub struct PublicKey<R: Ring>(pub R, pub TR<R>);
 pub struct KSK<R: Ring>(Vec<GLev<R>>);
 
 impl<R: Ring> GLWE<R> {
-    pub fn zero(k: usize, params: &RingParam) -> Self {
-        Self(TR::zero(k, &params), R::zero(&params))
+    pub fn zero(k: usize, param: &RingParam) -> Self {
+        Self(TR::zero(k, &param), R::zero(&param))
     }
     pub fn from_plaintext(k: usize, param: &RingParam, p: R) -> Self {
         Self(TR::zero(k, &param), p)
@@ -187,6 +204,9 @@ impl GLWE<Rq> {
 impl<R: Ring> Add<GLWE<R>> for GLWE<R> {
     type Output = Self;
     fn add(self, other: Self) -> Self {
+        debug_assert_eq!(self.0.k, other.0.k);
+        debug_assert_eq!(self.1.param(), other.1.param());
+
         let a: TR<R> = self.0 + other.0;
         let b: R = self.1 + other.1;
         Self(a, b)
@@ -196,6 +216,8 @@ impl<R: Ring> Add<GLWE<R>> for GLWE<R> {
 impl<R: Ring> Add<R> for GLWE<R> {
     type Output = Self;
     fn add(self, plaintext: R) -> Self {
+        debug_assert_eq!(self.1.param(), plaintext.param());
+
         let a: TR<R> = self.0;
         let b: R = self.1 + plaintext;
         Self(a, b)
@@ -231,6 +253,9 @@ impl<R: Ring> Sum<GLWE<R>> for GLWE<R> {
 impl<R: Ring> Sub<GLWE<R>> for GLWE<R> {
     type Output = Self;
     fn sub(self, other: Self) -> Self {
+        debug_assert_eq!(self.0.k, other.0.k);
+        debug_assert_eq!(self.1.param(), other.1.param());
+
         let a: TR<R> = self.0 - other.0;
         let b: R = self.1 - other.1;
         Self(a, b)
@@ -240,6 +265,8 @@ impl<R: Ring> Sub<GLWE<R>> for GLWE<R> {
 impl<R: Ring> Mul<R> for GLWE<R> {
     type Output = Self;
     fn mul(self, plaintext: R) -> Self {
+        debug_assert_eq!(self.1.param(), plaintext.param());
+
         let a: TR<R> = TR {
             k: self.0.k,
             r: self
@@ -351,8 +378,7 @@ mod tests {
         }
     }
     pub fn t_decode(param: &Param, pt: &Tn) -> Rq {
-        let p = param.t;
-        let pt = pt.mul_div_round(p, u64::MAX);
+        let pt = pt.mul_div_round(param.t, u64::MAX);
         Rq::from_vec_u64(&param.pt(), pt.coeffs().iter().map(|c| c.0).collect())
     }
     #[test]
