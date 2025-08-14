@@ -16,10 +16,6 @@ pub struct T64(pub u64);
 // `Tn<1>`.
 impl Ring for T64 {
     type C = T64;
-    // type Param = ();
-
-    // const Q: u64 = u64::MAX; // WIP
-    // const N: usize = 1;
 
     fn param(&self) -> RingParam {
         RingParam {
@@ -45,13 +41,13 @@ impl Ring for T64 {
     // TODO rm beta & l from inputs, make it always beta=2,l=64.
     /// Note: only beta=2 and l=64 is supported.
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self> {
-        assert_eq!(beta, 2u32); // only beta=2 supported
-                                // assert_eq!(l, 64u32); // only l=64 supported
+        assert_eq!(beta, 2u32, "only beta=2 supported");
+        // assert_eq!(l, 64u32, "only l=64 supported");
 
         // (0..64)
-        (0..l)
+        (0..l as u64)
             .rev()
-            .map(|i| T64(((self.0 >> i) & 1) as u64))
+            .map(|i| T64((self.0 >> i) & 1))
             .collect()
     }
     fn remodule(&self, p: u64) -> T64 {

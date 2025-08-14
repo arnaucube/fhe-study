@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use arith::{Matrix, Ring, Rq, C, R};
+use arith::{Matrix, Rq, C, R};
 
 #[derive(Clone, Debug)]
 pub struct SecretKey(Rq);

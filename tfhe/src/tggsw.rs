@@ -157,6 +157,7 @@ mod tests {
     #[test]
     fn test_external_product() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 4,
             t: 16, // plaintext modulus

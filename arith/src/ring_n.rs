@@ -15,14 +15,7 @@ pub struct R {
     pub coeffs: Vec<i64>,
 }
 
-// impl<const N: usize> Ring for R<N> {
 impl R {
-    // type C = i64;
-    // type Param = usize; // n
-
-    // const Q: u64 = i64::MAX as u64; // WIP
-    // const N: usize = N;
-
     pub fn coeffs(&self) -> Vec<i64> {
         self.coeffs.clone()
     }
@@ -33,16 +26,12 @@ impl R {
         }
     }
     fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, n: usize) -> Self {
-        // let coeffs: [i64; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
-        // let coeffs: [i64; N] = array::from_fn(|_| dist.sample(&mut rng).round() as i64);
         Self {
             n,
             coeffs: std::iter::repeat_with(|| dist.sample(&mut rng).round() as i64)
                 .take(n)
                 .collect(),
         }
-        // let coeffs: [C; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
-        // Self(coeffs)
     }
 
     pub fn from_vec(n: usize, coeffs: Vec<i64>) -> Self {
@@ -90,9 +79,6 @@ impl From<crate::ring_nq::Rq> for R {
 }
 
 impl R {
-    // pub fn coeffs(&self) -> [i64; N] {
-    //     self.0
-    // }
     pub fn to_rq(self, q: u64) -> crate::Rq {
         crate::Rq::from((q, self))
     }
@@ -196,7 +182,6 @@ impl Add<&R> for &R {
     type Output = R;
 
     fn add(self, rhs: &R) -> Self::Output {
-        // R(array::from_fn(|i| self.0[i] + rhs.0[i]))
         assert_eq!(self.n, rhs.n);
         R {
             n: self.n,
@@ -220,11 +205,6 @@ impl Sum<R> for R {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = R::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, x| acc + x)
     }
@@ -234,7 +214,6 @@ impl Sub<R> for R {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        // Self(array::from_fn(|i| self.0[i] - rhs.0[i]))
         assert_eq!(self.n, rhs.n);
         Self {
             n: self.n,
@@ -248,7 +227,6 @@ impl Sub<&R> for &R {
     type Output = R;
 
     fn sub(self, rhs: &R) -> Self::Output {
-        // R(array::from_fn(|i| self.0[i] - rhs.0[i]))
         assert_eq!(self.n, rhs.n);
         R {
             n: self.n,

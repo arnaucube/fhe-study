@@ -49,11 +49,10 @@ impl TLWE {
         Ok((SecretKey(sk), pk))
     }
 
-    // TODO use param instead of p:u64
     pub fn encode(param: &Param, m: &Rq) -> T64 {
         assert_eq!(param.ring.n, 1);
         debug_assert_eq!(param.t, m.param.q); // plaintext modulus
-                                              //
+
         let delta = u64::MAX / param.t; // floored
         let coeffs = m.coeffs();
         T64(coeffs[0].v * delta)
@@ -112,14 +111,14 @@ impl TLWE {
         Self(GLWE(a, b))
     }
 }
-// NOTE: the ugly const generics are temporary
+
 pub fn blind_rotation(
     param: &Param,
     c: TLWE, // kn
     btk: BootstrappingKey,
     table: TGLWE, // n,k
 ) -> TGLWE {
-    debug_assert_eq!(c.0 .0.k, param.k); // TODO or k*n?
+    debug_assert_eq!(c.0 .0.k, param.k);
 
     // TODO replace `param.k*param.ring.n` by `param.kn()`
     let c_kn: TLWE = c.mod_switch((param.k * param.ring.n) as u64);
@@ -138,7 +137,6 @@ pub fn blind_rotation(
             c_j.clone(),
             c_j.clone().left_rotate(a.r[j].0 as usize),
         );
-        // dbg!(&c_j);
     });
     c_j
 }
@@ -164,7 +162,7 @@ pub struct BootstrappingKey(
 impl BootstrappingKey {
     pub fn from_sk(mut rng: impl Rng, param: &Param, sk: &tglwe::SecretKey) -> Result<Self> {
         let (beta, l) = (2u32, 64u32); // TMP
-                                       //
+
         let s: TR<Tn> = sk.0 .0.clone();
         let (sk2, _) = TLWE::new_key(&mut rng, &param.lwe())?; // TLWE<KN> compatible with TGLWE<N,K>
 
@@ -229,11 +227,6 @@ impl Sum<TLWE> for TLWE {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = TLWE::<K>::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, e| acc + e)
     }
@@ -290,6 +283,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 128, // plaintext modulus
@@ -324,6 +318,7 @@ mod tests {
     #[test]
     fn test_addition() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 128, // plaintext modulus
@@ -357,6 +352,7 @@ mod tests {
     #[test]
     fn test_add_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 128, // plaintext modulus
@@ -389,6 +385,7 @@ mod tests {
     #[test]
     fn test_mul_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 128, // plaintext modulus
@@ -404,7 +401,6 @@ mod tests {
             let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let p1: T64 = TLWE::encode(&param, &m1);
             // don't scale up p2, set it directly from m2
-            // let p2: T64 = Tn(array::from_fn(|i| T64(m2.coeffs()[i].0)));
             let p2: T64 = T64(m2.coeffs()[0].v);
 
             let c1 = TLWE::encrypt(&mut rng, &param, &pk, &p1)?;
@@ -422,6 +418,7 @@ mod tests {
     #[test]
     fn test_key_switch() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 128, // plaintext modulus
@@ -440,7 +437,7 @@ mod tests {
         let msg_dist = Uniform::new(0_u64, param.t);
         let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
         let p = TLWE::encode(&param, &m); // plaintext
-                                          //
+
         let c = TLWE::encrypt_s(&mut rng, &param, &sk, &p)?;
 
         let c2 = c.key_switch(&param, beta, l, &ksk);
@@ -463,6 +460,7 @@ mod tests {
     #[test]
     fn test_bootstrapping() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam {
                 q: u64::MAX,
                 n: 1024,
@@ -470,10 +468,6 @@ mod tests {
             k: 1,
             t: 128, // plaintext modulus
         };
-        // const T: u64 = 128; // plaintext modulus
-        // const K: usize = 1;
-        // const N: usize = 1024;
-        // const KN: usize = K * N;
         let mut rng = rand::thread_rng();
 
         let start = Instant::now();
@@ -494,7 +488,6 @@ mod tests {
         let c = TLWE::encrypt_s(&mut rng, &param.lwe(), &sk_tlwe, &p)?;
 
         let start = Instant::now();
-        // the ugly const generics are temporary
         let bootstrapped: TLWE = bootstrapping(&param, btk, table, c);
         println!("bootstrapping took: {:?}", start.elapsed());
 

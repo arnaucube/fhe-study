@@ -12,11 +12,13 @@ use arith::{Ring, RingParam, Rq, Zq, TR};
 
 use crate::glev::GLev;
 
-// const ERR_SIGMA: f64 = 3.2;
-const ERR_SIGMA: f64 = 0.0; // TODO WIP
+// error deviation for the Gaussian(Normal) distribution
+// sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5
+pub(crate) const ERR_SIGMA: f64 = 3.2;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Param {
+    pub err_sigma: f64,
     pub ring: RingParam,
     pub k: usize,
     pub t: u64,
@@ -38,6 +40,7 @@ impl Param {
     ///   TRLWE sk: s \in B_N[X]^K
     pub fn lwe(&self) -> Self {
         Self {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: self.ring.q,
                 n: 1,
@@ -72,7 +75,7 @@ impl<R: Ring> GLWE<R> {
 
     pub fn new_key(mut rng: impl Rng, param: &Param) -> Result<(SecretKey<R>, PublicKey<R>)> {
         let Xi_key = Uniform::new(0_f64, 2_f64);
-        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+        let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let s: TR<R> = TR::rand(&mut rng, Xi_key, param.k, &param.ring);
         let a: TR<R> = TR::rand(
@@ -87,7 +90,7 @@ impl<R: Ring> GLWE<R> {
         Ok((SecretKey(s), pk))
     }
     pub fn pk_from_sk(mut rng: impl Rng, param: &Param, sk: SecretKey<R>) -> Result<PublicKey<R>> {
-        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+        let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let a: TR<R> = TR::rand(
             &mut rng,
@@ -141,7 +144,7 @@ impl<R: Ring> GLWE<R> {
         m: &R, // already scaled
     ) -> Result<Self> {
         let Xi_key = Uniform::new(0_f64, 2_f64);
-        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+        let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let a: TR<R> = TR::rand(&mut rng, Xi_key, param.k, &param.ring);
         let e = R::rand(&mut rng, Xi_err, &param.ring);
@@ -156,7 +159,7 @@ impl<R: Ring> GLWE<R> {
         m: &R, // already scaled
     ) -> Result<Self> {
         let Xi_key = Uniform::new(0_f64, 2_f64);
-        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+        let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let u: R = R::rand(&mut rng, Xi_key, &param.ring);
 
@@ -240,11 +243,6 @@ impl<R: Ring> Sum<GLWE<R>> for GLWE<R> {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = GLWE::<R>::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, e| acc + e)
     }
@@ -328,6 +326,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt_ring_nq() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 128,
@@ -335,7 +334,6 @@ mod tests {
             k: 16,
             t: 32, // plaintext modulus
         };
-        // let k: usize = 16;
         type S = GLWE<Rq>;
 
         let mut rng = rand::thread_rng();
@@ -345,9 +343,8 @@ mod tests {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
 
             let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?; // msg
-                                                                    // let m: Rq<Q, N> = m.remodule::<Q>();
-
             let p = S::encode(&param, &m); // plaintext
+
             let c = S::encrypt(&mut rng, &param, &pk, &p)?; // ciphertext
             let p_recovered = c.decrypt(&sk);
             let m_recovered = S::decode(&param, &p_recovered);
@@ -370,8 +367,6 @@ mod tests {
         let p = m.param.q; // plaintext space
         let delta = u64::MAX / p; // floored
         let coeffs = m.coeffs();
-        // Tn(array::from_fn(|i| T64(coeffs[i].0 * delta)))
-        // Tn{param, coeffs: array::from_fn(|i| T64(coeffs[i].0 * delta)))
         Tn {
             param: *param,
             coeffs: coeffs.iter().map(|c_i| T64(c_i.v * delta)).collect(),
@@ -384,6 +379,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt_torus() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: u64::MAX,
                 n: 128,
@@ -422,6 +418,7 @@ mod tests {
     #[test]
     fn test_addition() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 128,
@@ -459,6 +456,7 @@ mod tests {
     #[test]
     fn test_add_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 128,
@@ -495,6 +493,7 @@ mod tests {
     #[test]
     fn test_mul_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 16,
@@ -530,6 +529,7 @@ mod tests {
     #[test]
     fn test_mod_switch() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 8,
@@ -561,6 +561,7 @@ mod tests {
 
             let p_recovered = c2.decrypt(&sk2);
             let new_param = Param {
+                err_sigma: ERR_SIGMA,
                 ring: RingParam {
                     q: new_q,
                     n: param.ring.n,
@@ -579,6 +580,7 @@ mod tests {
     #[test]
     fn test_key_switch() -> Result<()> {
         let param = Param {
+            err_sigma: ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 128,

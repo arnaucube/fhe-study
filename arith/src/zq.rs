@@ -9,13 +9,6 @@ pub struct Zq {
     pub v: u64,
 }
 
-// WIP
-// impl<const Q: u64> From<Vec<u64>> for Vec<Zq<Q>> {
-//     fn from(v: Vec<u64>) -> Self {
-//         v.into_iter().map(Zq::new).collect()
-//     }
-// }
-
 pub(crate) fn modulus_u64(q: u64, e: u64) -> u64 {
     (e % q + q) % q
 }
@@ -24,7 +17,6 @@ impl Zq {
         // TODO WIP
         let r: f64 = dist.sample(&mut rng);
         Self::from_f64(q, r)
-        // Self::from_u64(r.round() as u64)
     }
     pub fn from_u64(q: u64, v: u64) -> Self {
         if v >= q {
@@ -81,7 +73,7 @@ impl Zq {
         // for rem != Self(0) {
         while rem != Self::zero(self.q) {
             // if odd
-            // TODO use a more readible expression
+            // TODO use a more readeable expression
             if 1 - ((rem.v & 1) << 1) as i64 == -1 {
                 res = res * exp;
             }

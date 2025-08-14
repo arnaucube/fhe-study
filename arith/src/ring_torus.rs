@@ -22,17 +22,12 @@ use crate::{
 /// 𝕋, where Q=2^64.
 #[derive(Clone, Debug)]
 pub struct Tn {
-    // pub n: usize,
     pub param: RingParam,
     pub coeffs: Vec<T64>,
 }
 
 impl Ring for Tn {
     type C = T64;
-    // type Param = usize; // n
-
-    // const Q: u64 = u64::MAX; // WIP
-    // const N: usize = N;
 
     fn param(&self) -> RingParam {
         RingParam {
@@ -58,7 +53,6 @@ impl Ring for Tn {
                 .take(param.n)
                 .collect(),
         }
-        // Self(array::from_fn(|_| T64::rand(&mut rng, &dist)))
     }
 
     fn from_vec(param: &RingParam, coeffs: Vec<Self::C>) -> Self {
@@ -160,7 +154,6 @@ impl Add<Tn> for Tn {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        // Self(array::from_fn(|i| self.0[i] + rhs.0[i]))
         assert_eq!(self.param, rhs.param);
         Self {
             param: self.param,
@@ -174,7 +167,6 @@ impl Add<&Tn> for &Tn {
     type Output = Tn;
 
     fn add(self, rhs: &Tn) -> Self::Output {
-        // Tn(array::from_fn(|i| self.0[i] + rhs.0[i]))
         assert_eq!(self.param, rhs.param);
         Tn {
             param: self.param,
@@ -198,11 +190,6 @@ impl Sum<Tn> for Tn {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = Tn::<N>::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, x| acc + x)
     }
@@ -225,7 +212,6 @@ impl Sub<&Tn> for &Tn {
     type Output = Tn;
 
     fn sub(self, rhs: &Tn) -> Self::Output {
-        // Tn(array::from_fn(|i| self.0[i] - rhs.0[i]))
         assert_eq!(self.param, rhs.param);
         Tn {
             param: self.param,
@@ -238,9 +224,6 @@ impl Sub<&Tn> for &Tn {
 
 impl SubAssign for Tn {
     fn sub_assign(&mut self, rhs: Self) {
-        // for i in 0..N {
-        //     self.0[i] -= rhs.0[i];
-        // }
         assert_eq!(self.param, rhs.param);
         for i in 0..self.param.n {
             self.coeffs[i] -= rhs.coeffs[i];
@@ -252,7 +235,6 @@ impl Neg for Tn {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        // Tn(array::from_fn(|i| -self.0[i]))
         Self {
             param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| -*c_i).collect(),
@@ -300,7 +282,6 @@ fn naive_poly_mul(poly1: &Tn, poly2: &Tn) -> Tn {
 
     Tn {
         param,
-        // coeffs: array::from_fn(|i| T64(result[i] as u64)),
         coeffs: result.iter().map(|r_i| T64(*r_i as u64)).collect(),
     }
 }
@@ -321,7 +302,6 @@ impl Mul<T64> for Tn {
     fn mul(self, s: T64) -> Self {
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] * s),
             coeffs: self.coeffs.iter().map(|c_i| *c_i * s).collect(),
         }
     }
@@ -330,7 +310,6 @@ impl Mul<T64> for Tn {
 impl Mul<u64> for Tn {
     type Output = Self;
     fn mul(self, s: u64) -> Self {
-        // Self(array::from_fn(|i| self.0[i] * s))
         Tn {
             param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| *c_i * s).collect(),
@@ -340,7 +319,6 @@ impl Mul<u64> for Tn {
 impl Mul<&u64> for &Tn {
     type Output = Tn;
     fn mul(self, s: &u64) -> Self::Output {
-        // Tn::<N>(array::from_fn(|i| self.0[i] * *s))
         Tn {
             param: self.param,
             coeffs: self.coeffs.iter().map(|c_i| c_i * s).collect(),

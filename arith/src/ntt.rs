@@ -18,18 +18,12 @@ use std::sync::{Mutex, OnceLock};
 static CACHE: OnceLock<Mutex<HashMap<(u64, usize), (Vec<Zq>, Vec<Zq>, Zq)>>> = OnceLock::new();
 
 fn roots(q: u64, n: usize) -> (Vec<Zq>, Vec<Zq>, Zq) {
-    // Initialize CACHE with an empty HashMap on first use
     let cache_lock = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-
-    // Lock the HashMap for this thread
     let mut cache = cache_lock.lock().unwrap();
-
     if let Some(value) = cache.get(&(q, n)) {
-        // Found an existing value — return a clone
         return value.clone();
     }
 
-    // Not found — compute the new triple
     let n_inv: Zq = Zq {
         q,
         v: const_inv_mod(q, n as u64),
@@ -37,10 +31,8 @@ fn roots(q: u64, n: usize) -> (Vec<Zq>, Vec<Zq>, Zq) {
     let root_of_unity: u64 = primitive_root_of_unity(q, 2 * n);
     let roots_of_unity: Vec<Zq> = roots_of_unity(q, n, root_of_unity);
     let roots_of_unity_inv: Vec<Zq> = roots_of_unity_inv(q, n, roots_of_unity.clone());
-
     let value = (roots_of_unity, roots_of_unity_inv, n_inv);
 
-    // Store and return
     cache.insert((q, n), value.clone());
     value
 }
@@ -71,7 +63,8 @@ impl NTT {
             t /= 2;
             m *= 2;
         }
-        // Rq::from_vec((a.q, n), r)
+        // TODO think if maybe not return a Rq type, or if returned Rq, maybe
+        // fill the `evals` field, which is what we're actually returning here
         Rq {
             param: RingParam { q, n },
             coeffs: r,
@@ -107,10 +100,11 @@ impl NTT {
         for i in 0..n {
             r[i] = r[i] * n_inv;
         }
-        // Rq::from_vec((a.q, n), r)
         Rq {
             param: RingParam { q, n },
             coeffs: r,
+            // TODO maybe at `evals` place the inputed `a` which is the evals
+            // format
             evals: None,
         }
     }
@@ -238,27 +232,4 @@ mod tests {
         }
         Ok(())
     }
-
-    // #[test]
-    // fn test_ntt_loop_2() -> Result<()> {
-    //     // let q: u64 = 2u64.pow(16) + 1;
-    //     // let n: usize = 512;
-    //     let q: u64 = 35184371138561;
-    //     let n: usize = 1 << 14;
-    //     let param = RingParam { q, n };
-    //
-    //     use rand::distributions::Uniform;
-    //     let mut rng = rand::thread_rng();
-    //     let dist = Uniform::new(0_f64, q as f64);
-    //
-    //     let a: Rq = Rq::rand(&mut rng, dist, &param);
-    //     let start = std::time::Instant::now();
-    //     for _ in 0..10_000 {
-    //         let a_ntt = NTT::ntt(&a);
-    //         let a_intt = NTT::intt(&a_ntt);
-    //         assert_eq!(a, a_intt);
-    //     }
-    //     dbg!(start.elapsed());
-    //     Ok(())
-    // }
 }

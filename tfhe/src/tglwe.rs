@@ -1,22 +1,15 @@
 use anyhow::Result;
-use itertools::zip_eq;
-use rand::distributions::Standard;
 use rand::Rng;
-use rand_distr::{Normal, Uniform};
-use std::array;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Sub};
 
 use arith::{Ring, RingParam, Rq, Tn, T64, TR};
 use gfhe::{glwe, glwe::Param, GLWE};
 
-use crate::tlev::TLev;
 use crate::{tlwe, tlwe::TLWE};
 
-// pub type SecretKey<const N: usize, const K: usize> = glwe::SecretKey<Tn<N>, K>;
 #[derive(Clone, Debug)]
 pub struct SecretKey(pub glwe::SecretKey<Tn>);
-// pub struct SecretKey<const K: usize>(pub tlwe::SecretKey<K>);
 
 impl SecretKey {
     pub fn to_tlwe(&self, param: &Param) -> tlwe::SecretKey {
@@ -45,11 +38,9 @@ impl TGLWE {
     }
 
     pub fn new_key(mut rng: impl Rng, param: &Param) -> Result<(SecretKey, PublicKey)> {
-        // assert_eq!(KN, K * N); // this is wip, while not being able to compute K*N
         let (sk_tlwe, _) = TLWE::new_key(&mut rng, &param.lwe())?; //param.lwe() so that it uses K*N
         debug_assert_eq!(sk_tlwe.0 .0.r.len(), param.lwe().k); // =KN (sanity check)
 
-        // let sk = crate::tlwe::sk_to_tglwe::<N, K, KN>(sk_tlwe);
         let sk = sk_tlwe.to_tglwe(param);
         let pk: PublicKey = GLWE::pk_from_sk(rng, param, sk.0.clone())?;
         Ok((sk, pk))
@@ -60,7 +51,6 @@ impl TGLWE {
         let p = param.t;
         let delta = u64::MAX / p; // floored
         let coeffs = m.coeffs();
-        // Tn(array::from_fn(|i| T64(coeffs[i].0 * delta)))
         Tn {
             param: param.ring,
             coeffs: coeffs.iter().map(|c_i| T64(c_i.v * delta)).collect(),
@@ -72,7 +62,7 @@ impl TGLWE {
         Rq::from_vec_u64(&param.pt(), pt.coeffs().iter().map(|c| c.0).collect())
     }
 
-    // encrypts with the given SecretKey (instead of PublicKey)
+    /// encrypts with the given SecretKey (instead of PublicKey)
     pub fn encrypt_s(rng: impl Rng, param: &Param, sk: &SecretKey, p: &Tn) -> Result<Self> {
         let glwe = GLWE::encrypt_s(rng, param, &sk.0, p)?;
         Ok(Self(glwe))
@@ -141,11 +131,6 @@ impl Sum<TGLWE> for TGLWE {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = TGLWE::<N, K>::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, e| acc + e)
     }
@@ -208,6 +193,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 16,
             t: 128, // plaintext modulus
@@ -242,6 +228,7 @@ mod tests {
     #[test]
     fn test_addition() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 16,
             t: 128, // plaintext modulus
@@ -275,6 +262,7 @@ mod tests {
     #[test]
     fn test_add_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 16,
             t: 128, // plaintext modulus
@@ -307,6 +295,7 @@ mod tests {
     #[test]
     fn test_mul_plaintext() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 16,
             t: 128, // plaintext modulus
@@ -342,6 +331,7 @@ mod tests {
     #[test]
     fn test_sample_extraction() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 64 },
             k: 16,
             t: 128, // plaintext modulus

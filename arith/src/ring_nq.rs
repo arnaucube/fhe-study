@@ -13,9 +13,6 @@ use crate::zq::{modulus_u64, Zq};
 
 use crate::{Ring, RingParam};
 
-// NOTE: currently using fixed-size arrays, but pending to see if with
-// real-world parameters the stack can keep up; if not will move everything to
-// use Vec.
 /// PolynomialRing element, where the PolynomialRing is R = Z_q[X]/(X^n +1)
 /// The implementation assumes that q is prime.
 #[derive(Clone)]
@@ -31,8 +28,6 @@ pub struct Rq {
 
 impl Ring for Rq {
     type C = Zq;
-    // type Param = (u64, usize);
-    // type Param = Param;
 
     fn param(&self) -> RingParam {
         self.param
@@ -40,8 +35,6 @@ impl Ring for Rq {
     fn coeffs(&self) -> Vec<Self::C> {
         self.coeffs.to_vec()
     }
-    // fn zero(q: u64, n: usize) -> Self {
-    // fn zero(param: (u64, usize)) -> Self {
     fn zero(param: &RingParam) -> Self {
         Self {
             param: param.clone(),
@@ -50,8 +43,6 @@ impl Ring for Rq {
         }
     }
     fn rand(mut rng: impl Rng, dist: impl Distribution<f64>, param: &RingParam) -> Self {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Self::C::rand(&mut rng, &dist));
         Self {
             param: param.clone(),
             coeffs: std::iter::repeat_with(|| Self::C::rand(&mut rng, &dist, param.q))
@@ -93,23 +84,17 @@ impl Ring for Rq {
             q: p,
             n: self.param.n,
         };
-        // Rq::from_vec_u64(p, self.n, self.coeffs().iter().map(|m_i| m_i.v).collect())
         Rq::from_vec_u64(&param, self.coeffs().iter().map(|m_i| m_i.v).collect())
     }
 
     /// perform the mod switch operation from Q to Q', where Q2=Q'
-    // fn mod_switch<const P: u64, const M: usize>(&self) -> impl Ring {
     fn mod_switch(&self, p: u64) -> Rq {
         let param = RingParam {
             q: p,
             n: self.param.n,
         };
-        // assert_eq!(N, M); // sanity check
         Rq {
             param,
-            // q: p,
-            // n: self.n,
-            // coeffs: array::from_fn(|i| self.coeffs[i].mod_switch::<P>()),
             coeffs: self.coeffs.iter().map(|c_i| c_i.mod_switch(p)).collect(),
             evals: None,
         }
@@ -135,7 +120,6 @@ impl From<(u64, crate::ring_n::R)> for Rq {
 
         Self::from_vec(
             &RingParam { q, n: r.n },
-            // (q, r.n),
             r.coeffs()
                 .iter()
                 .map(|e| Zq::from_f64(q, *e as f64))
@@ -161,21 +145,13 @@ impl Rq {
         self.coeffs.clone()
     }
     pub fn compute_evals(&mut self) {
-        self.evals = Some(NTT::ntt(self).coeffs); // TODO improve, ntt returns Rq but here
-                                                  // just needs Vec<Zq>
+        self.evals = Some(NTT::ntt(self).coeffs);
+        // TODO improve, ntt returns Rq but here just needs Vec<Zq>
     }
     pub fn to_r(self) -> crate::R {
         crate::R::from(self)
     }
 
-    // TODO rm since it is implemented in Ring trait impl
-    // pub fn zero() -> Self {
-    //     let coeffs = array::from_fn(|_| Zq::zero());
-    //     Self {
-    //         coeffs,
-    //         evals: None,
-    //     }
-    // }
     // this method is mostly for tests
     pub fn from_vec_u64(param: &RingParam, coeffs: Vec<u64>) -> Self {
         let coeffs_mod_q: Vec<Zq> = coeffs.iter().map(|c| Zq::from_u64(param.q, *c)).collect();
@@ -204,14 +180,9 @@ impl Rq {
         mut rng: impl Rng,
         dist: impl Distribution<f64>,
         param: &RingParam,
-        // q: u64,
-        // n: usize,
     ) -> Result<Self> {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
         Ok(Self {
             param: *param,
-            // q,
-            // n,
             coeffs: std::iter::repeat_with(|| Zq::from_f64(param.q, dist.sample(&mut rng).abs()))
                 .take(param.n)
                 .collect(),
@@ -222,14 +193,9 @@ impl Rq {
         mut rng: impl Rng,
         dist: impl Distribution<f64>,
         param: &RingParam,
-        // q: u64,
-        // n: usize,
     ) -> Result<Self> {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng).abs()));
         Ok(Self {
             param: *param,
-            // q,
-            // n,
             coeffs: std::iter::repeat_with(|| Zq::from_f64(param.q, dist.sample(&mut rng).abs()))
                 .take(param.n)
                 .collect(),
@@ -241,7 +207,6 @@ impl Rq {
         dist: impl Distribution<f64>,
         param: &RingParam,
     ) -> Result<Self> {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));
         Ok(Self {
             param: *param,
             coeffs: std::iter::repeat_with(|| Zq::from_f64(param.q, dist.sample(&mut rng)))
@@ -255,7 +220,6 @@ impl Rq {
         dist: impl Distribution<u64>,
         param: &RingParam,
     ) -> Result<Self> {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_u64(dist.sample(&mut rng)));
         Ok(Self {
             param: *param,
             coeffs: std::iter::repeat_with(|| Zq::from_u64(param.q, dist.sample(&mut rng)))
@@ -270,7 +234,6 @@ impl Rq {
         dist: impl Distribution<bool>,
         param: &RingParam,
     ) -> Result<Self> {
-        // let coeffs: [Zq<Q>; N] = array::from_fn(|_| Zq::from_bool(dist.sample(&mut rng)));
         Ok(Rq {
             param: *param,
             coeffs: std::iter::repeat_with(|| Zq::from_bool(param.q, dist.sample(&mut rng)))
@@ -304,7 +267,6 @@ impl Rq {
     pub fn mul_by_zq(&self, s: &Zq) -> Self {
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] * *s),
             coeffs: self.coeffs.iter().map(|c_i| *c_i * *s).collect(),
             evals: None,
         }
@@ -313,7 +275,6 @@ impl Rq {
         let s = Zq::from_u64(self.param.q, s);
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] * s),
             coeffs: self.coeffs.iter().map(|&e| e * s).collect(),
             evals: None,
         }
@@ -321,7 +282,6 @@ impl Rq {
     pub fn mul_by_f64(&self, s: f64) -> Self {
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| Zq::from_f64(self.coeffs[i].0 as f64 * s)),
             coeffs: self
                 .coeffs
                 .iter()
@@ -450,22 +410,11 @@ impl Add<Rq> for Rq {
         assert_eq!(self.param, rhs.param);
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
             coeffs: zip_eq(self.coeffs, rhs.coeffs)
                 .map(|(l, r)| l + r)
                 .collect(),
             evals: None,
         }
-        // Self {
-        //     coeffs: self
-        //         .coeffs
-        //         .iter()
-        //         .zip(rhs.coeffs)
-        //         .map(|(a, b)| *a + b)
-        //         .collect(),
-        //     evals: None,
-        // }
-        // Self(r.iter_mut().map(|e| e.r#mod()).collect()) // TODO mod should happen auto in +
     }
 }
 impl Add<&Rq> for &Rq {
@@ -475,7 +424,6 @@ impl Add<&Rq> for &Rq {
         assert_eq!(self.param, rhs.param);
         Rq {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] + rhs.coeffs[i]),
             coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
                 .map(|(l, r)| l + r)
                 .collect(),
@@ -497,11 +445,6 @@ impl Sum<Rq> for Rq {
     where
         I: Iterator<Item = Self>,
     {
-        // let mut acc = Rq::zero();
-        // for e in iter {
-        //     acc += e;
-        // }
-        // acc
         let first = iter.next().unwrap();
         iter.fold(first, |acc, x| acc + x)
     }
@@ -514,7 +457,6 @@ impl Sub<Rq> for Rq {
         assert_eq!(self.param, rhs.param);
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
             coeffs: zip_eq(self.coeffs, rhs.coeffs)
                 .map(|(l, r)| l - r)
                 .collect(),
@@ -529,7 +471,6 @@ impl Sub<&Rq> for &Rq {
         debug_assert_eq!(self.param, rhs.param);
         Rq {
             param: self.param,
-            // coeffs: array::from_fn(|i| self.coeffs[i] - rhs.coeffs[i]),
             coeffs: zip_eq(self.coeffs.clone(), rhs.coeffs.clone())
                 .map(|(l, r)| l - r)
                 .collect(),
@@ -613,8 +554,6 @@ impl Neg for Rq {
     fn neg(self) -> Self::Output {
         Self {
             param: self.param,
-            // coeffs: array::from_fn(|i| -self.coeffs[i]),
-            // coeffs: self.coeffs.iter().map(|c_i| -c_i).collect(),
             coeffs: self.coeffs.iter().map(|c_i| -*c_i).collect(),
             evals: None,
         }
@@ -624,7 +563,6 @@ impl Neg for Rq {
 // note: this assumes that Q is prime
 fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
     assert_eq!(lhs.param, rhs.param);
-    // let (q, n) = (lhs.q, lhs.n);
 
     // reuse evaluations if already computed
     if !lhs.evals.is_some() {
@@ -636,7 +574,6 @@ fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
     let lhs_evals = lhs.evals.clone().unwrap();
     let rhs_evals = rhs.evals.clone().unwrap();
 
-    // let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
     let c_ntt: Rq = Rq::from_vec(
         &lhs.param,
         zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
@@ -645,7 +582,7 @@ fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
     Rq::new(&lhs.param, c.coeffs, Some(c_ntt.coeffs))
 }
 // note: this assumes that Q is prime
-// TODO impl karatsuba for non-prime Q
+// TODO impl karatsuba for non-prime Q. Alternatively check NTT with RNS trick.
 fn mul(lhs: &Rq, rhs: &Rq) -> Rq {
     assert_eq!(lhs.param, rhs.param);
 
@@ -661,7 +598,6 @@ fn mul(lhs: &Rq, rhs: &Rq) -> Rq {
         NTT::ntt(rhs).coeffs
     };
 
-    // let c_ntt: [Zq<Q>; N] = array::from_fn(|i| lhs_evals[i] * rhs_evals[i]);
     let c_ntt: Rq = Rq::from_vec(
         &lhs.param,
         zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
@@ -758,11 +694,8 @@ mod tests {
         assert_eq!(a.len(), param.n);
         assert_eq!(b.len(), param.n);
 
-        // let a: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(a[i]));
         let mut a = Rq::from_vec_u64(&param, a);
-        // let b: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(b[i]));
         let mut b = Rq::from_vec_u64(&param, b);
-        // let expected_c: [Zq<Q>; N] = array::from_fn(|i| Zq::from_u64(expected_c[i]));
         let expected_c = Rq::from_vec_u64(&param, expected_c);
 
         let c = mul_mut(&mut a, &mut b);

@@ -154,7 +154,6 @@ mod tests {
                 .map(|e| (*e as f64 / (scale_factor_u64 as f64)).round() as u64)
                 .collect();
             let m_decrypted = Rq::from_vec_u64(&param.ring, m_decrypted);
-            // assert_eq!(m_decrypted, Rq::from(m_raw));
             assert_eq!(m_decrypted, m_raw.to_rq(q));
         }
 

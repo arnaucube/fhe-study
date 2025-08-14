@@ -1,17 +1,13 @@
 use anyhow::Result;
 use itertools::zip_eq;
 use rand::Rng;
-use std::array;
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 
-use arith::{Ring, RingParam, Rq, Tn, T64, TR};
+use arith::{Ring, T64};
 
 use crate::tlev::TLev;
-use crate::{
-    tglwe::TGLWE,
-    tlwe::{PublicKey, SecretKey, TLWE},
-};
-use gfhe::glwe::{Param, GLWE};
+use crate::tlwe::{SecretKey, TLWE};
+use gfhe::glwe::Param;
 
 /// vector of length K+1 = [K], [1]
 #[derive(Clone, Debug)]
@@ -73,10 +69,12 @@ mod tests {
     use rand::distributions::Uniform;
 
     use super::*;
+    use arith::{RingParam, Rq};
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 2, // plaintext modulus
@@ -106,6 +104,7 @@ mod tests {
     #[test]
     fn test_external_product() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 32,
             t: 2, // plaintext modulus
@@ -130,7 +129,6 @@ mod tests {
 
             let res: TLWE = tgsw * tlwe;
 
-            // let p_recovered = res.decrypt(&sk, beta);
             let p_recovered = res.decrypt(&sk);
             // downscaled by delta^-1
             let res_recovered = TLWE::decode(&param, &p_recovered);
@@ -145,6 +143,7 @@ mod tests {
     #[test]
     fn test_cmux() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 32,
             t: 2, // plaintext modulus

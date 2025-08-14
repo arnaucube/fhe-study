@@ -33,10 +33,6 @@ pub trait Ring:
 {
     /// C defines the coefficient type
     type C: Debug + Clone;
-    // type Param: Debug+Clone+Copy;
-
-    // const Q: u64;
-    // const N: usize;
 
     fn param(&self) -> RingParam;
     fn coeffs(&self) -> Vec<Self::C>;

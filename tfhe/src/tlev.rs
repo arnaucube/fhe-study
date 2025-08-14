@@ -1,12 +1,10 @@
 use anyhow::Result;
 use itertools::zip_eq;
 use rand::Rng;
-use std::array;
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 
-use arith::{Ring, RingParam, Rq, Tn, T64, TR};
+use arith::{Ring, RingParam, Rq, T64};
 
-use crate::tglwe::TGLWE;
 use crate::tlwe::{PublicKey, SecretKey, TLWE};
 use gfhe::glwe::Param;
 
@@ -23,7 +21,6 @@ impl TLev {
     }
     pub fn decode(param: &Param, p: &T64) -> Rq {
         Rq::from_vec_u64(
-            // &RingParam { q: u64::MAX, n: 1 },
             &RingParam { q: param.t, n: 1 },
             p.coeffs().iter().map(|c| c.0).collect(),
         )
@@ -38,14 +35,16 @@ impl TLev {
     ) -> Result<Self> {
         debug_assert_eq!(pk.1.k, param.k);
 
-        let tlev: Vec<TLWE> = (1..l + 1)
+        let tlev: Vec<TLWE> = (1..l as u64 + 1)
             .map(|i| {
-                TLWE::encrypt(
-                    &mut rng,
-                    param,
-                    pk,
-                    &(*m * (u64::MAX / beta.pow(i as u32) as u64)),
-                )
+                let aux = if i < 64 {
+                    *m * (u64::MAX / (1u64 << i))
+                } else {
+                    // 1<<64 would overflow, and anyways we're dividing u64::MAX
+                    // by it, which would be equal to 1
+                    *m
+                };
+                TLWE::encrypt(&mut rng, param, pk, &aux)
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -59,6 +58,8 @@ impl TLev {
         sk: &SecretKey,
         m: &T64,
     ) -> Result<Self> {
+        debug_assert_eq!(sk.0 .0.k, param.k);
+
         let tlev: Vec<TLWE> = (1..l as u64 + 1)
             .map(|i| {
                 let aux = if i < 64 {
@@ -113,6 +114,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
         let param = Param {
+            err_sigma: crate::ERR_SIGMA,
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 2, // plaintext modulus
@@ -143,13 +145,15 @@ mod tests {
     #[test]
     fn test_tlev_vect64_product() -> Result<()> {
         let param = Param {
+            err_sigma: 0.1, // WIP
             ring: RingParam { q: u64::MAX, n: 1 },
             k: 16,
             t: 2, // plaintext modulus
         };
 
         let beta: u32 = 2;
-        let l: u32 = 16;
+        // let l: u32 = 16;
+        let l: u32 = 64;
 
         let mut rng = rand::thread_rng();
         let msg_dist = Uniform::new(0_u64, param.t);

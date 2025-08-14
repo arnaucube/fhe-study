@@ -1,10 +1,9 @@
 use anyhow::Result;
 use itertools::zip_eq;
 use rand::Rng;
-use rand_distr::{Normal, Uniform};
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 
-use arith::{Ring, TR};
+use arith::Ring;
 
 use crate::glwe::{Param, PublicKey, SecretKey, GLWE};
 
@@ -41,7 +40,6 @@ impl<R: Ring> GLev<R> {
         l: u32,
         sk: &SecretKey<R>,
         m: &R,
-        // delta: u64,
     ) -> Result<Self> {
         let glev: Vec<GLWE<R>> = (1..l + 1)
             .map(|i| {
@@ -69,6 +67,7 @@ impl<R: Ring> GLev<R> {
 impl<R: Ring> Mul<Vec<R>> for GLev<R> {
     type Output = GLWE<R>;
     fn mul(self, v: Vec<R>) -> GLWE<R> {
+        debug_assert_eq!(self.0.len(), v.len());
         // TODO debug_assert_eq of param
 
         // l times GLWES
@@ -91,6 +90,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
         let param = Param {
+            err_sigma: crate::glwe::ERR_SIGMA,
             ring: RingParam {
                 q: 2u64.pow(16) + 1,
                 n: 128,
@@ -103,7 +103,6 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 16;
 
-        // let delta: u64 = Q / T; // floored
         let mut rng = rand::thread_rng();
         let msg_dist = Uniform::new(0_u64, param.t);
 
