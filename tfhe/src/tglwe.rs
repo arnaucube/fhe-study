@@ -61,6 +61,16 @@ impl TGLWE {
         let pt = pt.mul_div_round(p, u64::MAX);
         Rq::from_vec_u64(&param.pt(), pt.coeffs().iter().map(|c| c.0).collect())
     }
+    /// encodes the given message as a TGLWE constant/public value, for using it
+    /// in ct-pt-multiplication.
+    pub fn new_const(param: &Param, m: &Rq) -> Tn {
+        debug_assert_eq!(param.t, m.param.q);
+        // don't scale up m, set the Tn element directly from m's coefficients
+        Tn {
+            param: param.ring,
+            coeffs: m.coeffs().iter().map(|c_i| T64(c_i.v)).collect(),
+        }
+    }
 
     /// encrypts with the given SecretKey (instead of PublicKey)
     pub fn encrypt_s(rng: impl Rng, param: &Param, sk: &SecretKey, p: &Tn) -> Result<Self> {
@@ -310,11 +320,7 @@ mod tests {
             let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let p1: Tn = TGLWE::encode(&param, &m1);
-            // don't scale up p2, set it directly from m2
-            let p2: Tn = Tn {
-                param: param.ring,
-                coeffs: m2.coeffs().iter().map(|c_i| T64(c_i.v)).collect(),
-            };
+            let p2: Tn = TGLWE::new_const(&param, &m2); // as constant/public value
 
             let c1 = TGLWE::encrypt(&mut rng, &param, &pk, &p1)?;
 

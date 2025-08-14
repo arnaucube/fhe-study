@@ -16,7 +16,7 @@ Implementations from scratch done while studying some FHE papers; do not use in 
 
 This example shows usage of TFHE, but the idea is that the same interface would
 work for using CKKS & BFV, the only thing to be changed would be the parameters
-and the line `type S = TWLE<K>` to use `CKKS<Q, N>` or `BFV<Q, N, T>`.
+and the usage of `TLWE` by `CKKS` or `BFV`.
 
 ```rust
 let param = Param {
@@ -31,7 +31,7 @@ let msg_dist = Uniform::new(0_u64, param.t);
 
 let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
 
-// get two random msgs in Z_t
+// get three random msgs in Rt
 let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 let m3 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
@@ -39,8 +39,9 @@ let m3 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 // encode the msgs into the plaintext space
 let p1 = TLWE::encode(&param, &m1); // plaintext
 let p2 = TLWE::encode(&param, &m2); // plaintext
-let c3_const: T64 = T64(m3.coeffs()[0].v); // encode it as constant
+let c3_const = TLWE::new_const(&param, &m3); // as constant/public value
 
+// encrypt p1 and m2
 let c1 = TLWE::encrypt(&mut rng, &param, &pk, &p1)?;
 let c2 = TLWE::encrypt(&mut rng, &param, &pk, &p2)?;
 

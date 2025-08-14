@@ -61,6 +61,12 @@ impl TLWE {
         let p = p.mul_div_round(param.t, u64::MAX);
         Rq::from_vec_u64(&param.pt(), p.coeffs().iter().map(|c| c.0).collect())
     }
+    /// encodes the given message as a TLWE constant/public value, for using it
+    /// in ct-pt-multiplication.
+    pub fn new_const(param: &Param, m: &Rq) -> T64 {
+        debug_assert_eq!(param.t, m.param.q);
+        T64(m.coeffs()[0].v)
+    }
 
     // encrypts with the given SecretKey (instead of PublicKey)
     pub fn encrypt_s(rng: impl Rng, param: &Param, sk: &SecretKey, p: &T64) -> Result<Self> {
@@ -400,8 +406,7 @@ mod tests {
             let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let p1: T64 = TLWE::encode(&param, &m1);
-            // don't scale up p2, set it directly from m2
-            let p2: T64 = T64(m2.coeffs()[0].v);
+            let p2: T64 = TLWE::new_const(&param, &m2); // as constant/public value
 
             let c1 = TLWE::encrypt(&mut rng, &param, &pk, &p1)?;
 
