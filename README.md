@@ -16,30 +16,34 @@ Implementations from scratch done while studying some FHE papers; do not use in 
 
 This example shows usage of TFHE, but the idea is that the same interface would
 work for using CKKS & BFV, the only thing to be changed would be the parameters
-and the line `type S = TWLE<K>` to use `CKKS<Q, N>` or `BFV<Q, N, T>`.
+and the usage of `TLWE` by `CKKS` or `BFV`.
 
 ```rust
-const T: u64 = 128; // msg space (msg modulus)
-type M = Rq<T, 1>; // msg space
-type S = TLWE<256>;
+let param = Param {
+    err_sigma: crate::ERR_SIGMA,
+    ring: RingParam { q: u64::MAX, n: 1 },
+    k: 256,
+    t: 128, // plaintext modulus
+};
 
 let mut rng = rand::thread_rng();
-let msg_dist = Uniform::new(0_u64, T);
+let msg_dist = Uniform::new(0_u64, param.t);
 
-let (sk, pk) = S::new_key(&mut rng)?;
+let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
 
-// get two random msgs in Z_t
-let m1 = M::rand_u64(&mut rng, msg_dist)?;
-let m2 = M::rand_u64(&mut rng, msg_dist)?;
-let m3 = M::rand_u64(&mut rng, msg_dist)?;
+// get three random msgs in Rt
+let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+let m3 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
 // encode the msgs into the plaintext space
-let p1 = S::encode::<T>(&m1); // plaintext
-let p2 = S::encode::<T>(&m2); // plaintext
-let c3_const: Tn<1> = Tn(array::from_fn(|i| T64(m3.coeffs()[i].0))); // encode it as constant
+let p1 = TLWE::encode(&param, &m1); // plaintext
+let p2 = TLWE::encode(&param, &m2); // plaintext
+let c3_const = TLWE::new_const(&param, &m3); // as constant/public value
 
-let c1 = S::encrypt(&mut rng, &pk, &p1)?;
-let c2 = S::encrypt(&mut rng, &pk, &p2)?;
+// encrypt p1 and m2
+let c1 = TLWE::encrypt(&mut rng, &param, &pk, &p1)?;
+let c2 = TLWE::encrypt(&mut rng, &param, &pk, &p2)?;
 
 // now we can do encrypted operations (notice that we do them using simple
 // operation notation by rust's operator overloading):
@@ -48,9 +52,10 @@ let c4 = c_12 * c3_const;
 
 // decrypt & decode
 let p4_recovered = c4.decrypt(&sk);
-let m4 = S::decode::<T>(&p4_recovered);
+let m4 = TLWE::decode(&param, &p4_recovered);
 
 // m4 is equal to (m1+m2)*m3
+assert_eq!(((m1 + m2).to_r() * m3.to_r()).to_rq(param.t), m4);
 ```
 
 
@@ -62,7 +67,7 @@ let m4 = S::decode::<T>(&p4_recovered);
 	- external products of ciphertexts
 		- TGSW x TLWE
 		- TGGSW x TGLWE
-	- TGSW & TGGSW CMux gate
+	- {TGSW, TGGSW} CMux gate
 	- blind rotation, key switching, mod switching
 	- bootstrapping
 - CKKS

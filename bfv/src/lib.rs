@@ -10,44 +10,61 @@ use rand::Rng;
 use rand_distr::{Normal, Uniform};
 use std::ops;
 
-use arith::{Ring, Rq, R};
+use arith::{Ring, RingParam, Rq, R};
 
 // error deviation for the Gaussian(Normal) distribution
 // sigma=3.2 from: https://eprint.iacr.org/2022/162.pdf page 5
 const ERR_SIGMA: f64 = 3.2;
 
-#[derive(Clone, Debug)]
-pub struct SecretKey<const Q: u64, const N: usize>(Rq<Q, N>);
+#[derive(Clone, Copy, Debug)]
+pub struct Param {
+    ring: RingParam,
+    t: u64,
+    p: u64,
+}
+impl Param {
+    // returns the plaintext param
+    pub fn pt(&self) -> RingParam {
+        RingParam {
+            q: self.t,
+            n: self.ring.n,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
-pub struct PublicKey<const Q: u64, const N: usize>(Rq<Q, N>, Rq<Q, N>);
+pub struct SecretKey(Rq);
+
+#[derive(Clone, Debug)]
+pub struct PublicKey(Rq, Rq);
 
 /// Relinearization key
 #[derive(Clone, Debug)]
-pub struct RLK<const PQ: u64, const N: usize>(Rq<PQ, N>, Rq<PQ, N>);
+pub struct RLK(Rq, Rq);
 
 // RLWE ciphertext
 #[derive(Clone, Debug)]
-pub struct RLWE<const Q: u64, const N: usize>(Rq<Q, N>, Rq<Q, N>);
+pub struct RLWE(Rq, Rq);
 
-impl<const Q: u64, const N: usize> RLWE<Q, N> {
+impl RLWE {
     fn add(lhs: Self, rhs: Self) -> Self {
-        RLWE::<Q, N>(lhs.0 + rhs.0, lhs.1 + rhs.1)
+        RLWE(lhs.0 + rhs.0, lhs.1 + rhs.1)
     }
-    pub fn remodule<const P: u64>(&self) -> RLWE<P, N> {
-        let x = self.0.remodule::<P>();
-        let y = self.1.remodule::<P>();
-        RLWE::<P, N>(x, y)
+    pub fn remodule(&self, p: u64) -> RLWE {
+        let x = self.0.remodule(p);
+        let y = self.1.remodule(p);
+        RLWE(x, y)
     }
 
-    fn tensor<const PQ: u64, const T: u64>(a: &Self, b: &Self) -> (Rq<Q, N>, Rq<Q, N>, Rq<Q, N>) {
+    fn tensor(t: u64, a: &Self, b: &Self) -> (Rq, Rq, Rq) {
+        let (q, n) = (a.0.param.q, a.0.param.n);
         // expand Q->PQ // TODO rm
 
         // get the coefficients in Z, ie. interpret a,b \in R (instead of R_q)
-        let a0: R<N> = a.0.to_r();
-        let a1: R<N> = a.1.to_r();
-        let b0: R<N> = b.0.to_r();
-        let b1: R<N> = b.1.to_r();
+        let a0: R = a.0.clone().to_r(); // TODO rm clone()
+        let a1: R = a.1.clone().to_r();
+        let b0: R = b.0.clone().to_r();
+        let b1: R = b.1.clone().to_r();
 
         // tensor (\in R) (2021-204 p.9)
         // NOTE: here can use *, but at first versions want to make it explicit
@@ -60,44 +77,47 @@ impl<const Q: u64, const N: usize> RLWE<Q, N> {
         let c2: Vec<i64> = naive_mul(&a1, &b1);
 
         // scale down, then reduce module Q, so result is \in R_q
-        let c0: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c0, T, Q);
-        let c1: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c1, T, Q);
-        let c2: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2, T, Q);
+        let c0: Rq = arith::ring_n::mul_div_round(q, n, c0, t, q);
+        let c1: Rq = arith::ring_n::mul_div_round(q, n, c1, t, q);
+        let c2: Rq = arith::ring_n::mul_div_round(q, n, c2, t, q);
 
         (c0, c1, c2)
     }
     /// ciphertext multiplication
-    fn mul<const PQ: u64, const T: u64>(rlk: &RLK<PQ, N>, a: &Self, b: &Self) -> Self {
-        let (c0, c1, c2) = Self::tensor::<PQ, T>(a, b);
-        BFV::<Q, N, T>::relinearize_204::<PQ>(&rlk, &c0, &c1, &c2)
+    fn mul(t: u64, rlk: &RLK, a: &Self, b: &Self) -> Self {
+        let (c0, c1, c2) = Self::tensor(t, a, b);
+        BFV::relinearize_204(&rlk, &c0, &c1, &c2)
     }
 }
 // naive mul in the ring Rq, reusing the ring_n::naive_mul and then applying mod(X^N +1)
-fn tmp_naive_mul<const Q: u64, const N: usize>(a: Rq<Q, N>, b: Rq<Q, N>) -> Rq<Q, N> {
-    Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(&a.to_r(), &b.to_r()))
+fn tmp_naive_mul(a: Rq, b: Rq) -> Rq {
+    Rq::from_vec_i64(
+        &a.param.clone(),
+        arith::ring_n::naive_mul(&a.to_r(), &b.to_r()),
+    )
 }
 
-impl<const Q: u64, const N: usize> ops::Add<RLWE<Q, N>> for RLWE<Q, N> {
+impl ops::Add<RLWE> for RLWE {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
         Self::add(self, rhs)
     }
 }
 
-impl<const Q: u64, const N: usize, const T: u64> ops::Add<&Rq<T, N>> for &RLWE<Q, N> {
-    type Output = RLWE<Q, N>;
-    fn add(self, rhs: &Rq<T, N>) -> Self::Output {
-        BFV::<Q, N, T>::add_const(self, rhs)
+impl ops::Add<&Rq> for &RLWE {
+    type Output = RLWE;
+    fn add(self, rhs: &Rq) -> Self::Output {
+        BFV::add_const(self, rhs)
     }
 }
 
-pub struct BFV<const Q: u64, const N: usize, const T: u64> {}
+pub struct BFV {}
 
-impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
-    const DELTA: u64 = Q / T; // floor
+impl BFV {
+    // const DELTA: u64 = Q / T; // floor
 
     /// generate a new key pair (privK, pubK)
-    pub fn new_key(mut rng: impl Rng) -> Result<(SecretKey<Q, N>, PublicKey<Q, N>)> {
+    pub fn new_key(mut rng: impl Rng, param: &Param) -> Result<(SecretKey, PublicKey)> {
         // WIP: review probabilities
 
         // let Xi_key = Uniform::new(-1_f64, 1_f64);
@@ -105,114 +125,135 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         // secret key
-        // let mut s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
-        let mut s = Rq::<Q, N>::rand_u64(&mut rng, Xi_key)?;
+        // let mut s = Rq::rand_f64(&mut rng, Xi_key)?;
+        let mut s = Rq::rand_u64(&mut rng, Xi_key, &param.ring)?;
         // since s is going to be multiplied by other Rq elements, already
         // compute its NTT
         s.compute_evals();
 
         // pk = (-a * s + e, a)
-        let a = Rq::<Q, N>::rand_u64(&mut rng, Uniform::new(0_u64, Q))?;
-        let e = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let pk: PublicKey<Q, N> = PublicKey((&(-a) * &s) + e, a.clone());
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, param.ring.q), &param.ring)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
+        let pk: PublicKey = PublicKey(&(&(-a.clone()) * &s) + &e, a.clone()); // TODO rm clones
         Ok((SecretKey(s), pk))
     }
 
-    pub fn encrypt(mut rng: impl Rng, pk: &PublicKey<Q, N>, m: &Rq<T, N>) -> Result<RLWE<Q, N>> {
+    // note: m is modulus t
+    pub fn encrypt(mut rng: impl Rng, param: &Param, pk: &PublicKey, m: &Rq) -> Result<RLWE> {
+        // assert param & inputs
+        debug_assert_eq!(param.ring, pk.0.param);
+        debug_assert_eq!(param.t, m.param.q);
+        debug_assert_eq!(param.ring.n, m.param.n);
+
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         // let Xi_key = Uniform::new(0_u64, 2_u64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let u = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
-        // let u = Rq::<Q, N>::rand_u64(&mut rng, Xi_key)?;
-        let e_1 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let e_2 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
+        let u = Rq::rand_f64(&mut rng, Xi_key, &param.ring)?;
+        // let u = Rq::rand_u64(&mut rng, Xi_key)?;
+        let e_1 = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
+        let e_2 = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
 
         // migrate m's coeffs to the bigger modulus Q (from T)
-        let m = m.remodule::<Q>();
-        let c0 = &pk.0 * &u + e_1 + m * Self::DELTA;
+        let m = m.remodule(param.ring.q);
+        let c0 = &pk.0 * &u + e_1 + m * (param.ring.q / param.t); // floor(q/t)=DELTA
         let c1 = &pk.1 * &u + e_2;
-        Ok(RLWE::<Q, N>(c0, c1))
+        Ok(RLWE(c0, c1))
     }
 
-    pub fn decrypt(sk: &SecretKey<Q, N>, c: &RLWE<Q, N>) -> Rq<T, N> {
-        let cs = c.0 + c.1 * sk.0; // done in mod q
+    pub fn decrypt(param: &Param, sk: &SecretKey, c: &RLWE) -> Rq {
+        debug_assert_eq!(param.ring, sk.0.param);
+        debug_assert_eq!(param.ring.q, c.0.param.q);
+        debug_assert_eq!(param.ring.n, c.0.param.n);
+
+        let cs: Rq = &c.0 + &(&c.1 * &sk.0); // done in mod q
 
         // same but with naive_mul:
         // let c1s = arith::ring_n::naive_mul(&c.1.to_r(), &sk.0.to_r());
-        // let c1s = Rq::<Q, N>::from_vec_i64(c1s);
+        // let c1s = Rq::from_vec_i64(c1s);
         // let cs = c.0 + c1s;
 
-        let r: Rq<Q, N> = cs.mul_div_round(T, Q);
-        r.remodule::<T>()
+        let r: Rq = cs.mul_div_round(param.t, param.ring.q);
+        r.remodule(param.t)
     }
 
-    fn add_const(c: &RLWE<Q, N>, m: &Rq<T, N>) -> RLWE<Q, N> {
+    fn add_const(c: &RLWE, m: &Rq) -> RLWE {
+        let q = c.0.param.q;
+        let t = m.param.q;
+
         // assuming T<Q, move m from Zq<T> to Zq<Q>
-        let m = m.remodule::<Q>();
-        RLWE::<Q, N>(c.0 + m * Self::DELTA, c.1)
+        let m = m.remodule(c.0.param.q);
+        // TODO rm clones
+        RLWE(c.0.clone() + m * (q / t), c.1.clone()) // floor(q/t)=DELTA
     }
-    fn mul_const<const PQ: u64>(rlk: &RLK<PQ, N>, c: &RLWE<Q, N>, m: &Rq<T, N>) -> RLWE<Q, N> {
+    fn mul_const(rlk: &RLK, c: &RLWE, m: &Rq) -> RLWE {
+        // let pq = rlk.0.q;
+        let q = c.0.param.q;
+        let t = m.param.q;
+
         // assuming T<Q, move m from Zq<T> to Zq<Q>
-        let m = m.remodule::<Q>();
+        let m = m.remodule(q);
 
         // encrypt m*Delta without noise, and then perform normal ciphertext multiplication
-        let md = RLWE::<Q, N>(m * Self::DELTA, Rq::zero());
-        RLWE::<Q, N>::mul::<PQ, T>(&rlk, &c, &md)
+        let md = RLWE(m * (q / t), Rq::zero(&c.0.param)); // floor(q/t)=DELTA
+        RLWE::mul(t, &rlk, &c, &md)
     }
 
-    fn rlk_key<const PQ: u64>(mut rng: impl Rng, s: &SecretKey<Q, N>) -> Result<RLK<PQ, N>> {
+    fn rlk_key(mut rng: impl Rng, param: &Param, s: &SecretKey) -> Result<RLK> {
+        let pq = param.p * param.ring.q;
+        let rlk_param = RingParam {
+            q: pq,
+            n: param.ring.n,
+        };
+
         // TODO review using Xi' instead of Xi
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
         // let Xi_err = Normal::new(0_f64, 0.0)?;
-        let s = s.0.remodule::<PQ>();
-        let a = Rq::<PQ, N>::rand_u64(&mut rng, Uniform::new(0_u64, PQ))?;
-        let e = Rq::<PQ, N>::rand_f64(&mut rng, Xi_err)?;
-
-        let P = PQ / Q;
+        let s = s.0.remodule(pq);
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, pq), &rlk_param)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &rlk_param)?;
 
         // let rlk: RLK<PQ, N> = RLK::<PQ, N>(-(&a * &s + e) + (s * s) * P, a.clone());
-        let rlk: RLK<PQ, N> = RLK::<PQ, N>(
-            -(tmp_naive_mul(a, s) + e) + tmp_naive_mul(s, s) * P,
+        // TODO rm clones
+        let rlk: RLK = RLK(
+            -(tmp_naive_mul(a.clone(), s.clone()) + e)
+                + tmp_naive_mul(s.clone(), s.clone()) * param.p,
             a.clone(),
         );
 
         Ok(rlk)
     }
 
-    fn relinearize<const PQ: u64>(
-        rlk: &RLK<PQ, N>,
-        c0: &Rq<Q, N>,
-        c1: &Rq<Q, N>,
-        c2: &Rq<Q, N>,
-    ) -> RLWE<Q, N> {
-        let P = PQ / Q;
+    fn relinearize(rlk: &RLK, c0: &Rq, c1: &Rq, c2: &Rq) -> RLWE {
+        let pq = rlk.0.param.q;
+        let param = c0.param;
+        let q = param.q;
+        let p = pq / q;
 
-        let c2rlk0: Vec<f64> = (c2.to_r() * rlk.0.to_r())
+        let c2rlk0: Vec<f64> = (c2.clone().to_r() * rlk.0.clone().to_r())
             .coeffs()
             .iter()
-            .map(|e| (*e as f64 / P as f64).round())
+            .map(|e| (*e as f64 / p as f64).round())
             .collect();
 
-        let c2rlk1: Vec<f64> = (c2.to_r() * rlk.1.to_r())
+        let c2rlk1: Vec<f64> = (c2.clone().to_r() * rlk.1.clone().to_r()) // TODO rm clones
             .coeffs()
             .iter()
-            .map(|e| (*e as f64 / P as f64).round())
+            .map(|e| (*e as f64 / p as f64).round())
             .collect();
 
-        let r0 = Rq::<Q, N>::from_vec_f64(c2rlk0);
-        let r1 = Rq::<Q, N>::from_vec_f64(c2rlk1);
+        let r0 = Rq::from_vec_f64(&param, c2rlk0);
+        let r1 = Rq::from_vec_f64(&param, c2rlk1);
 
-        let res = RLWE::<Q, N>(c0 + &r0, c1 + &r1);
+        let res = RLWE(c0 + &r0, c1 + &r1);
         res
     }
-    fn relinearize_204<const PQ: u64>(
-        rlk: &RLK<PQ, N>,
-        c0: &Rq<Q, N>,
-        c1: &Rq<Q, N>,
-        c2: &Rq<Q, N>,
-    ) -> RLWE<Q, N> {
-        let P = PQ / Q;
+    fn relinearize_204(rlk: &RLK, c0: &Rq, c1: &Rq, c2: &Rq) -> RLWE {
+        let pq = rlk.0.param.q;
+        let q = c0.param.q;
+        let p = pq / q;
+        let n = c0.param.n;
+        // TODO (in debug) check that all Ns match
 
         // let c2rlk0: Rq<PQ, N> = c2.remodule::<PQ>() * rlk.0.remodule::<PQ>();
         // let c2rlk1: Rq<PQ, N> = c2.remodule::<PQ>() * rlk.1.remodule::<PQ>();
@@ -220,12 +261,12 @@ impl<const Q: u64, const N: usize, const T: u64> BFV<Q, N, T> {
         // let r1: Rq<Q, N> = c2rlk1.mul_div_round(1, P).remodule::<Q>();
 
         use arith::ring_n::naive_mul;
-        let c2rlk0: Vec<i64> = naive_mul(&c2.to_r(), &rlk.0.to_r());
-        let c2rlk1: Vec<i64> = naive_mul(&c2.to_r(), &rlk.1.to_r());
-        let r0: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2rlk0, 1, P);
-        let r1: Rq<Q, N> = arith::ring_n::mul_div_round::<Q, N>(c2rlk1, 1, P);
+        let c2rlk0: Vec<i64> = naive_mul(&c2.clone().to_r(), &rlk.0.clone().to_r()); // TODO rm clones
+        let c2rlk1: Vec<i64> = naive_mul(&c2.clone().to_r(), &rlk.1.clone().to_r());
+        let r0: Rq = arith::ring_n::mul_div_round(q, n, c2rlk0, 1, p);
+        let r1: Rq = arith::ring_n::mul_div_round(q, n, c2rlk1, 1, p);
 
-        let res = RLWE::<Q, N>(c0 + &r0, c1 + &r1);
+        let res = RLWE(c0 + &r0, c1 + &r1);
         res
     }
 }
@@ -239,21 +280,25 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 512;
-        const T: u64 = 32; // plaintext modulus
-        type S = BFV<Q, N, T>;
+        let param = Param {
+            ring: RingParam {
+                q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
+                n: 512,
+            },
+            t: 32, // plaintext modulus
+            p: 0,  // unused in this test
+        };
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..100 {
-            let (sk, pk) = S::new_key(&mut rng)?;
+            let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
-            let m = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let msg_dist = Uniform::new(0_u64, param.t);
+            let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
-            let c = S::encrypt(&mut rng, &pk, &m)?;
-            let m_recovered = S::decrypt(&sk, &c);
+            let c = BFV::encrypt(&mut rng, &param, &pk, &m)?;
+            let m_recovered = BFV::decrypt(&param, &sk, &c);
 
             assert_eq!(m, m_recovered);
         }
@@ -263,26 +308,30 @@ mod tests {
 
     #[test]
     fn test_addition() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 128;
-        const T: u64 = 32; // plaintext modulus
-        type S = BFV<Q, N, T>;
+        let param = Param {
+            ring: RingParam {
+                q: 2u64.pow(16) + 1, // q prime, and 2^q + 1 shape
+                n: 128,
+            },
+            t: 32, // plaintext modulus
+            p: 0,  // unused in this test
+        };
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..100 {
-            let (sk, pk) = S::new_key(&mut rng)?;
+            let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-            let msg_dist = Uniform::new(0_u64, T);
-            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let msg_dist = Uniform::new(0_u64, param.t);
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
-            let c1 = S::encrypt(&mut rng, &pk, &m1)?;
-            let c2 = S::encrypt(&mut rng, &pk, &m2)?;
+            let c1 = BFV::encrypt(&mut rng, &param, &pk, &m1)?;
+            let c2 = BFV::encrypt(&mut rng, &param, &pk, &m2)?;
 
             let c3 = c1 + c2;
 
-            let m3_recovered = S::decrypt(&sk, &c3);
+            let m3_recovered = BFV::decrypt(&param, &sk, &c3);
 
             assert_eq!(m1 + m2, m3_recovered);
         }
@@ -292,211 +341,208 @@ mod tests {
 
     #[test]
     fn test_constant_add_mul() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 16;
-        const T: u64 = 8; // plaintext modulus
-        type S = BFV<Q, N, T>;
+        let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
+        let param = Param {
+            ring: RingParam { q, n: 16 },
+            t: 8, // plaintext modulus
+            p: q * q,
+        };
 
         let mut rng = rand::thread_rng();
 
-        let (sk, pk) = S::new_key(&mut rng)?;
+        let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-        let msg_dist = Uniform::new(0_u64, T);
-        let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-        let m2_const = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-        let c1 = S::encrypt(&mut rng, &pk, &m1)?;
+        let msg_dist = Uniform::new(0_u64, param.t);
+        let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+        let m2_const = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+        let c1 = BFV::encrypt(&mut rng, &param, &pk, &m1)?;
 
         let c3_add = &c1 + &m2_const;
 
-        let m3_add_recovered = S::decrypt(&sk, &c3_add);
-        assert_eq!(m1 + m2_const, m3_add_recovered);
+        let m3_add_recovered = BFV::decrypt(&param, &sk, &c3_add);
+        assert_eq!(&m1 + &m2_const, m3_add_recovered);
 
         // test multiplication of a ciphertext by a constant
-        const P: u64 = Q * Q;
-        const PQ: u64 = P * Q;
-        let rlk = BFV::<Q, N, T>::rlk_key::<PQ>(&mut rng, &sk)?;
+        let rlk = BFV::rlk_key(&mut rng, &param, &sk)?;
 
-        let c3_mul = S::mul_const(&rlk, &c1, &m2_const);
+        let c3_mul = BFV::mul_const(&rlk, &c1, &m2_const);
 
-        let m3_mul_recovered = S::decrypt(&sk, &c3_mul);
+        let m3_mul_recovered = BFV::decrypt(&param, &sk, &c3_mul);
         assert_eq!(
-            (m1.to_r() * m2_const.to_r()).to_rq::<T>().coeffs(),
+            (m1.to_r() * m2_const.to_r()).to_rq(param.t).coeffs(),
             m3_mul_recovered.coeffs()
         );
 
         Ok(())
     }
 
-    // TMP WIP
-    #[test]
-    #[ignore]
-    fn test_params() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
-        const N: usize = 32;
-        const T: u64 = 8; // plaintext modulus
+    /*
+        // TMP WIP
+        #[test]
+        #[ignore]
+        fn test_param() -> Result<()> {
+            const Q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
+            const N: usize = 32;
+            const T: u64 = 8; // plaintext modulus
 
-        const P: u64 = Q * Q;
-        const PQ: u64 = P * Q;
-        const DELTA: u64 = Q / T; // floor
+            const P: u64 = Q * Q;
+            const PQ: u64 = P * Q;
+            const DELTA: u64 = Q / T; // floor
 
-        let mut rng = rand::thread_rng();
+            let mut rng = rand::thread_rng();
 
-        let Xi_key = Uniform::new(0_f64, 1_f64);
-        let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
+            let Xi_key = Uniform::new(0_f64, 1_f64);
+            let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
-        let e = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let u = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
-        let e_0 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let e_1 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let m = Rq::<Q, N>::rand_u64(&mut rng, Uniform::new(0_u64, T))?;
+            let s = Rq::rand_f64(&mut rng, Xi_key)?;
+            let e = Rq::rand_f64(&mut rng, Xi_err)?;
+            let u = Rq::rand_f64(&mut rng, Xi_key)?;
+            let e_0 = Rq::rand_f64(&mut rng, Xi_err)?;
+            let e_1 = Rq::rand_f64(&mut rng, Xi_err)?;
+            let m = Rq::rand_u64(&mut rng, Uniform::new(0_u64, T))?;
 
-        // v_fresh
-        let v: Rq<Q, N> = u * e + e_1 * s + e_0;
+            // v_fresh
+            let v: Rq<Q, N> = u * e + e_1 * s + e_0;
 
-        let q: f64 = Q as f64;
-        let t: f64 = T as f64;
-        let n: f64 = N as f64;
-        let delta: f64 = DELTA as f64;
+            let q: f64 = Q as f64;
+            let t: f64 = T as f64;
+            let n: f64 = N as f64;
+            let delta: f64 = DELTA as f64;
 
-        // r_t(q)/t should be equal to q/t-Δ
-        assert_eq!(
-            // r_t(q)/t, where r_t(q)=q mod t
-            (q % t) / t,
-            // Δt/Q = q - r_t(Q)/Q, so r_t(Q)=q - Δt
-            (q / t) - delta
-        );
-        let rt: f64 = (q % t) / t;
-        dbg!(&rt);
+            // r_t(q)/t should be equal to q/t-Δ
+            assert_eq!(
+                // r_t(q)/t, where r_t(q)=q mod t
+                (q % t) / t,
+                // Δt/Q = q - r_t(Q)/Q, so r_t(Q)=q - Δt
+                (q / t) - delta
+            );
+            let rt: f64 = (q % t) / t;
+            dbg!(&rt);
 
-        dbg!(v.infinity_norm());
-        let bound: f64 = (q / (2_f64 * t)) - (rt / 2_f64);
-        dbg!(bound);
-        assert!((v.infinity_norm() as f64) < bound);
-        let max_v_infnorm = bound - 1.0;
+            dbg!(v.infinity_norm());
+            let bound: f64 = (q / (2_f64 * t)) - (rt / 2_f64);
+            dbg!(bound);
+            assert!((v.infinity_norm() as f64) < bound);
+            let max_v_infnorm = bound - 1.0;
 
-        // addition noise
-        let v_add: Rq<Q, N> = v + v + u * rt;
-        let v_add: Rq<Q, N> = v_add + v_add + u * rt;
-        assert!((v_add.infinity_norm() as f64) < bound);
+            // addition noise
+            let v_add: Rq<Q, N> = v + v + u * rt;
+            let v_add: Rq<Q, N> = v_add + v_add + u * rt;
+            assert!((v_add.infinity_norm() as f64) < bound);
 
-        // multiplication noise
-        let (_, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
-        let c = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m.remodule::<T>())?;
-        let b_key: f64 = 1_f64;
-        // ef: expansion factor
-        let ef: f64 = 2.0 * n.sqrt();
-        let bound: f64 = ((ef * t) / 2.0)
-            * ((2.0 * max_v_infnorm * max_v_infnorm) / q
-                + (4.0 + ef * b_key) * (max_v_infnorm + max_v_infnorm)
-                + rt * (ef * b_key + 5.0))
-            + (1.0 + ef * b_key + ef * ef * b_key * b_key) / 2.0;
-        dbg!(&bound);
+            // multiplication noise
+            let (_, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
+            let c = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m.remodule::<T>())?;
+            let b_key: f64 = 1_f64;
+            // ef: expansion factor
+            let ef: f64 = 2.0 * n.sqrt();
+            let bound: f64 = ((ef * t) / 2.0)
+                * ((2.0 * max_v_infnorm * max_v_infnorm) / q
+                    + (4.0 + ef * b_key) * (max_v_infnorm + max_v_infnorm)
+                    + rt * (ef * b_key + 5.0))
+                + (1.0 + ef * b_key + ef * ef * b_key * b_key) / 2.0;
+            dbg!(&bound);
 
-        let k: Vec<f64> = (c.0 + c.1 * s - m * delta - v)
-            .coeffs()
-            .iter()
-            .map(|e_i| e_i.0 as f64 / q)
-            .collect();
-        let k = Rq::<Q, N>::from_vec_f64(k);
-        let v_tensor_0 = (v * v)
-            .coeffs()
-            .iter()
-            .map(|e_i| (e_i.0 as f64 * t) / q)
-            .collect::<Vec<f64>>();
-        let v_tensor_0 = Rq::<Q, N>::from_vec_f64(v_tensor_0);
-        let v_tensor_1 = ((m * v) + (m * v))
-            .coeffs()
-            .iter()
-            .map(|e_i| (e_i.0 as f64 * t * delta) / q)
-            .collect::<Vec<f64>>();
-        let v_tensor_1 = Rq::<Q, N>::from_vec_f64(v_tensor_1);
-        let v_tensor_2: Rq<Q, N> = (v * k + v * k) * t;
-        let rm: f64 = (ef * t) / 2.0;
-        let rm: Rq<Q, N> = Rq::<Q, N>::from_vec_f64(vec![rm; N]);
-        let v_tensor_3: Rq<Q, N> = (m * k
-            + m * k
-            + rm
-            + Rq::from_vec_f64(
-                ((m * m) * DELTA)
-                    .coeffs()
-                    .iter()
-                    .map(|e_i| e_i.0 as f64 / q)
-                    .collect::<Vec<f64>>(),
-            ))
-            * rt;
-        let v_tensor = v_tensor_0 + v_tensor_1 + v_tensor_2 - v_tensor_3;
+            let k: Vec<f64> = (c.0 + c.1 * s - m * delta - v)
+                .coeffs()
+                .iter()
+                .map(|e_i| e_i.0 as f64 / q)
+                .collect();
+            let k = Rq::from_vec_f64(k);
+            let v_tensor_0 = (v * v)
+                .coeffs()
+                .iter()
+                .map(|e_i| (e_i.0 as f64 * t) / q)
+                .collect::<Vec<f64>>();
+            let v_tensor_0 = Rq::from_vec_f64(v_tensor_0);
+            let v_tensor_1 = ((m * v) + (m * v))
+                .coeffs()
+                .iter()
+                .map(|e_i| (e_i.0 as f64 * t * delta) / q)
+                .collect::<Vec<f64>>();
+            let v_tensor_1 = Rq::from_vec_f64(v_tensor_1);
+            let v_tensor_2: Rq<Q, N> = (v * k + v * k) * t;
+            let rm: f64 = (ef * t) / 2.0;
+            let rm: Rq<Q, N> = Rq::from_vec_f64(vec![rm; N]);
+            let v_tensor_3: Rq<Q, N> = (m * k
+                + m * k
+                + rm
+                + Rq::from_vec_f64(
+                    ((m * m) * DELTA)
+                        .coeffs()
+                        .iter()
+                        .map(|e_i| e_i.0 as f64 / q)
+                        .collect::<Vec<f64>>(),
+                ))
+                * rt;
+            let v_tensor = v_tensor_0 + v_tensor_1 + v_tensor_2 - v_tensor_3;
 
-        let v_r = (1.0 + ef * b_key + ef * ef * b_key * b_key) / 2.0;
-        let v_mult_norm = v_tensor.infinity_norm() as f64 + v_r;
-        dbg!(&v_mult_norm);
-        dbg!(&bound);
-        assert!(v_mult_norm < bound);
+            let v_r = (1.0 + ef * b_key + ef * ef * b_key * b_key) / 2.0;
+            let v_mult_norm = v_tensor.infinity_norm() as f64 + v_r;
+            dbg!(&v_mult_norm);
+            dbg!(&bound);
+            assert!(v_mult_norm < bound);
 
-        // let m1 = Rq::<T, N>::zero();
-        // let m2 = Rq::<T, N>::zero();
-        // let (_, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
-        // let c1 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m1)?;
-        // let c2 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m2)?;
-        // let (c_a, c_b, c_c) = RLWE::<Q, N>::tensor::<PQ, T>(&c1, &c2);
-        // dbg!(&c_a.infinity_norm());
-        // dbg!(&c_b.infinity_norm());
-        // dbg!(&c_c.infinity_norm());
-        // assert!((c_a.infinity_norm() as f64) < bound);
-        // assert!((c_b.infinity_norm() as f64) < bound);
-        // assert!((c_c.infinity_norm() as f64) < bound);
-        // WIP
+            // let m1 = Rq::<T, N>::zero();
+            // let m2 = Rq::<T, N>::zero();
+            // let (_, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
+            // let c1 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m1)?;
+            // let c2 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m2)?;
+            // let (c_a, c_b, c_c) = RLWE::tensor::<PQ, T>(&c1, &c2);
+            // dbg!(&c_a.infinity_norm());
+            // dbg!(&c_b.infinity_norm());
+            // dbg!(&c_c.infinity_norm());
+            // assert!((c_a.infinity_norm() as f64) < bound);
+            // assert!((c_b.infinity_norm() as f64) < bound);
+            // assert!((c_c.infinity_norm() as f64) < bound);
+            // WIP
 
-        Ok(())
-    }
+            Ok(())
+        }
+    */
 
     #[test]
     fn test_tensor() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
-        const N: usize = 16;
-        const T: u64 = 2; // plaintext modulus
-
-        // const P: u64 = Q;
-        const P: u64 = Q * Q;
-        const PQ: u64 = P * Q;
-
+        let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
+        let param = Param {
+            ring: RingParam { q, n: 16 },
+            t: 2, // plaintext modulus
+            p: q * q,
+        };
         let mut rng = rand::thread_rng();
 
-        let msg_dist = Uniform::new(0_u64, T);
+        let msg_dist = Uniform::new(0_u64, param.t);
         for _ in 0..1_000 {
-            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
-            test_tensor_opt::<Q, N, T, PQ>(&mut rng, m1, m2)?;
+            test_tensor_opt(&mut rng, &param, m1, m2)?;
         }
 
         Ok(())
     }
-    fn test_tensor_opt<const Q: u64, const N: usize, const T: u64, const PQ: u64>(
-        mut rng: impl Rng,
-        m1: Rq<T, N>,
-        m2: Rq<T, N>,
-    ) -> Result<()> {
-        let (sk, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
+    fn test_tensor_opt(mut rng: impl Rng, param: &Param, m1: Rq, m2: Rq) -> Result<()> {
+        let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-        let c1 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m1)?;
-        let c2 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m2)?;
+        let c1 = BFV::encrypt(&mut rng, &param, &pk, &m1)?;
+        let c2 = BFV::encrypt(&mut rng, &param, &pk, &m2)?;
 
-        let (c_a, c_b, c_c) = RLWE::<Q, N>::tensor::<PQ, T>(&c1, &c2);
-        // let (c_a, c_b, c_c) = RLWE::<Q, N>::tensor_new::<PQ, T>(&c1, &c2);
+        let (c_a, c_b, c_c) = RLWE::tensor(param.t, &c1, &c2);
+        // let (c_a, c_b, c_c) = RLWE::tensor_new::<PQ, T>(&c1, &c2);
 
         // decrypt non-relinearized mul result
-        let m3: Rq<Q, N> = c_a + c_b * sk.0 + c_c * sk.0 * sk.0;
+        let m3: Rq = c_a + &c_b * &sk.0 + &c_c * &(&sk.0 * &sk.0);
+
         // let m3: Rq<Q, N> = c_a
-        //     + Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(&c_b.to_r(), &sk.0.to_r()))
-        //     + Rq::<Q, N>::from_vec_i64(arith::ring_n::naive_mul(
+        //     + Rq::from_vec_i64(arith::ring_n::naive_mul(&c_b.to_r(), &sk.0.to_r()))
+        //     + Rq::from_vec_i64(arith::ring_n::naive_mul(
         //         &c_c.to_r(),
         //         &R::<N>::from_vec(arith::ring_n::naive_mul(&sk.0.to_r(), &sk.0.to_r())),
         //     ));
-        let m3: Rq<Q, N> = m3.mul_div_round(T, Q); // descale
-        let m3 = m3.remodule::<T>();
+        let m3: Rq = m3.mul_div_round(param.t, param.ring.q); // descale
+        let m3 = m3.remodule(param.t);
 
-        let naive = (m1.to_r() * m2.to_r()).to_rq::<T>();
+        let naive = (m1.clone().to_r() * m2.clone().to_r()).to_rq(param.t); // TODO rm clones
         assert_eq!(
             m3.coeffs().to_vec(),
             naive.coeffs().to_vec(),
@@ -510,44 +556,39 @@ mod tests {
 
     #[test]
     fn test_mul_relin() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 16;
-        const T: u64 = 2; // plaintext modulus
-        type S = BFV<Q, N, T>;
-
-        const P: u64 = Q * Q;
-        const PQ: u64 = P * Q;
+        let q: u64 = 2u64.pow(16) + 1; // q prime, and 2^q + 1 shape
+        let param = Param {
+            ring: RingParam { q, n: 16 },
+            t: 2, // plaintext modulus
+            p: q * q,
+        };
 
         let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, T);
+        let msg_dist = Uniform::new(0_u64, param.t);
 
         for _ in 0..1_000 {
-            let m1 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
-            let m2 = Rq::<T, N>::rand_u64(&mut rng, msg_dist)?;
+            let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
+            let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
-            test_mul_relin_opt::<Q, N, T, PQ>(&mut rng, m1, m2)?;
+            test_mul_relin_opt(&mut rng, &param, m1, m2)?;
         }
 
         Ok(())
     }
 
-    fn test_mul_relin_opt<const Q: u64, const N: usize, const T: u64, const PQ: u64>(
-        mut rng: impl Rng,
-        m1: Rq<T, N>,
-        m2: Rq<T, N>,
-    ) -> Result<()> {
-        let (sk, pk) = BFV::<Q, N, T>::new_key(&mut rng)?;
+    fn test_mul_relin_opt(mut rng: impl Rng, param: &Param, m1: Rq, m2: Rq) -> Result<()> {
+        let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-        let rlk = BFV::<Q, N, T>::rlk_key::<PQ>(&mut rng, &sk)?;
+        let rlk = BFV::rlk_key(&mut rng, &param, &sk)?;
 
-        let c1 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m1)?;
-        let c2 = BFV::<Q, N, T>::encrypt(&mut rng, &pk, &m2)?;
+        let c1 = BFV::encrypt(&mut rng, &param, &pk, &m1)?;
+        let c2 = BFV::encrypt(&mut rng, &param, &pk, &m2)?;
 
-        let c3 = RLWE::<Q, N>::mul::<PQ, T>(&rlk, &c1, &c2); // uses relinearize internally
+        let c3 = RLWE::mul(param.t, &rlk, &c1, &c2); // uses relinearize internally
 
-        let m3 = BFV::<Q, N, T>::decrypt(&sk, &c3);
+        let m3 = BFV::decrypt(&param, &sk, &c3);
 
-        let naive = (m1.to_r() * m2.to_r()).to_rq::<T>();
+        let naive = (m1.clone().to_r() * m2.clone().to_r()).to_rq(param.t); // TODO rm clones
         assert_eq!(
             m3.coeffs().to_vec(),
             naive.coeffs().to_vec(),

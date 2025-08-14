@@ -5,7 +5,7 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)] // TMP
 
-use arith::{Rq, C, R};
+use arith::{RingParam, Rq, C, R};
 
 use anyhow::Result;
 use rand::Rng;
@@ -18,35 +18,47 @@ pub use encoder::Encoder;
 // sigma=3.2 from: https://eprint.iacr.org/2016/421.pdf page 17
 const ERR_SIGMA: f64 = 3.2;
 
-#[derive(Debug)]
-pub struct PublicKey<const Q: u64, const N: usize>(Rq<Q, N>, Rq<Q, N>);
-
-pub struct SecretKey<const Q: u64, const N: usize>(Rq<Q, N>);
-
-pub struct CKKS<const Q: u64, const N: usize> {
-    encoder: Encoder<Q, N>,
+#[derive(Clone, Copy, Debug)]
+pub struct Param {
+    ring: RingParam,
+    t: u64,
 }
 
-impl<const Q: u64, const N: usize> CKKS<Q, N> {
-    pub fn new(delta: C<f64>) -> Self {
-        let encoder = Encoder::<Q, N>::new(delta);
-        Self { encoder }
+#[derive(Debug)]
+pub struct PublicKey(Rq, Rq);
+
+pub struct SecretKey(Rq);
+
+pub struct CKKS {
+    param: Param,
+    encoder: Encoder,
+}
+
+impl CKKS {
+    pub fn new(param: &Param, delta: C<f64>) -> Self {
+        let encoder = Encoder::new(param.ring.n, delta);
+        Self {
+            param: param.clone(),
+            encoder,
+        }
     }
     /// generate a new key pair (privK, pubK)
-    pub fn new_key(&self, mut rng: impl Rng) -> Result<(SecretKey<Q, N>, PublicKey<Q, N>)> {
+    pub fn new_key(&self, mut rng: impl Rng) -> Result<(SecretKey, PublicKey)> {
+        let param = &self.param;
+
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let e = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
+        let e = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
 
-        let mut s = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
+        let mut s = Rq::rand_f64(&mut rng, Xi_key, &param.ring)?;
         // since s is going to be multiplied by other Rq elements, already
         // compute its NTT
         s.compute_evals();
 
-        let a = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
+        let a = Rq::rand_f64(&mut rng, Xi_key, &param.ring)?;
 
-        let pk: PublicKey<Q, N> = PublicKey((&(-a) * &s) + e, a.clone());
+        let pk: PublicKey = PublicKey((&(-a.clone()) * &s) + e, a.clone()); // TODO rm clones
         Ok((SecretKey(s), pk))
     }
 
@@ -54,64 +66,54 @@ impl<const Q: u64, const N: usize> CKKS<Q, N> {
     fn encrypt(
         &self, // TODO maybe rm?
         mut rng: impl Rng,
-        pk: &PublicKey<Q, N>,
-        m: &R<N>,
-    ) -> Result<(Rq<Q, N>, Rq<Q, N>)> {
+        pk: &PublicKey,
+        m: &R,
+    ) -> Result<(Rq, Rq)> {
+        let param = self.param;
         let Xi_key = Uniform::new(-1_f64, 1_f64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
-        let e_0 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
-        let e_1 = Rq::<Q, N>::rand_f64(&mut rng, Xi_err)?;
+        let e_0 = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
+        let e_1 = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
 
-        let v = Rq::<Q, N>::rand_f64(&mut rng, Xi_key)?;
+        let v = Rq::rand_f64(&mut rng, Xi_key, &param.ring)?;
 
-        let m: Rq<Q, N> = Rq::<Q, N>::from(*m);
+        // let m: Rq = Rq::from(*m);
+        let m: Rq = m.clone().to_rq(param.ring.q); // TODO rm clone
 
-        Ok((m + e_0 + v * pk.0.clone(), v * pk.1.clone() + e_1))
+        Ok((m + e_0 + &v * &pk.0.clone(), &v * &pk.1 + e_1))
     }
 
     fn decrypt(
         &self, // TODO maybe rm?
-        sk: &SecretKey<Q, N>,
-        c: (Rq<Q, N>, Rq<Q, N>),
-    ) -> Result<R<N>> {
-        let m = c.0.clone() + c.1 * sk.0;
+        sk: &SecretKey,
+        c: (Rq, Rq),
+    ) -> Result<R> {
+        let m = c.0.clone() + &c.1 * &sk.0;
         Ok(m.mod_centered_q())
     }
 
     pub fn encode_and_encrypt(
         &self,
         mut rng: impl Rng,
-        pk: &PublicKey<Q, N>,
+        pk: &PublicKey,
         z: &[C<f64>],
-    ) -> Result<(Rq<Q, N>, Rq<Q, N>)> {
-        let m: R<N> = self.encoder.encode(&z)?; // polynomial (encoded vec) \in R
+    ) -> Result<(Rq, Rq)> {
+        let m: R = self.encoder.encode(&z)?; // polynomial (encoded vec) \in R
 
         self.encrypt(&mut rng, pk, &m)
     }
 
-    pub fn decrypt_and_decode(
-        &self,
-        sk: SecretKey<Q, N>,
-        c: (Rq<Q, N>, Rq<Q, N>),
-    ) -> Result<Vec<C<f64>>> {
+    pub fn decrypt_and_decode(&self, sk: SecretKey, c: (Rq, Rq)) -> Result<Vec<C<f64>>> {
         let d = self.decrypt(&sk, c)?;
 
         self.encoder.decode(&d)
     }
 
-    pub fn add(
-        &self,
-        c0: &(Rq<Q, N>, Rq<Q, N>),
-        c1: &(Rq<Q, N>, Rq<Q, N>),
-    ) -> Result<(Rq<Q, N>, Rq<Q, N>)> {
+    pub fn add(&self, c0: &(Rq, Rq), c1: &(Rq, Rq)) -> Result<(Rq, Rq)> {
         Ok((&c0.0 + &c1.0, &c0.1 + &c1.1))
     }
-    pub fn sub(
-        &self,
-        c0: &(Rq<Q, N>, Rq<Q, N>),
-        c1: &(Rq<Q, N>, Rq<Q, N>),
-    ) -> Result<(Rq<Q, N>, Rq<Q, N>)> {
+    pub fn sub(&self, c0: &(Rq, Rq), c1: &(Rq, Rq)) -> Result<(Rq, Rq)> {
         Ok((&c0.0 - &c1.0, &c0.1 + &c1.1))
     }
 }
@@ -122,21 +124,26 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 32;
-        const T: u64 = 50;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 32;
+        let t: u64 = 50;
+        let param = Param {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor_u64 = 512_u64; // delta
         let scale_factor = C::<f64>::new(scale_factor_u64 as f64, 0.0); // delta
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let ckks = CKKS::<Q, N>::new(scale_factor);
+            let ckks = CKKS::new(&param, scale_factor);
 
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
-            let m_raw: R<N> = Rq::<Q, N>::rand_f64(&mut rng, Uniform::new(0_f64, T as f64))?.to_r();
-            let m = m_raw * scale_factor_u64;
+            let m_raw: R =
+                Rq::rand_f64(&mut rng, Uniform::new(0_f64, t as f64), &param.ring)?.to_r();
+            let m = &m_raw * &scale_factor_u64;
 
             let ct = ckks.encrypt(&mut rng, &pk, &m)?;
             let m_decrypted = ckks.decrypt(&sk, ct)?;
@@ -146,8 +153,8 @@ mod tests {
                 .iter()
                 .map(|e| (*e as f64 / (scale_factor_u64 as f64)).round() as u64)
                 .collect();
-            let m_decrypted = Rq::<Q, N>::from_vec_u64(m_decrypted);
-            assert_eq!(m_decrypted, Rq::<Q, N>::from(m_raw));
+            let m_decrypted = Rq::from_vec_u64(&param.ring, m_decrypted);
+            assert_eq!(m_decrypted, m_raw.to_rq(q));
         }
 
         Ok(())
@@ -155,21 +162,25 @@ mod tests {
 
     #[test]
     fn test_encode_encrypt_decrypt_decode() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 16;
-        const T: u64 = 8;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 16;
+        let t: u64 = 8;
+        let param = Param {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(512.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let ckks = CKKS::<Q, N>::new(scale_factor);
+            let ckks = CKKS::new(&param, scale_factor);
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
-            let z: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, T))
-                .take(N / 2)
+            let z: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, t))
+                .take(n / 2)
                 .collect();
-            let m: R<N> = ckks.encoder.encode(&z)?;
+            let m: R = ckks.encoder.encode(&z)?;
             println!("{}", m);
 
             // sanity check
@@ -200,26 +211,30 @@ mod tests {
 
     #[test]
     fn test_add() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 16;
-        const T: u64 = 8;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 16;
+        let t: u64 = 8;
+        let param = Param {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let ckks = CKKS::<Q, N>::new(scale_factor);
+            let ckks = CKKS::new(&param, scale_factor);
 
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
-            let z0: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, T))
-                .take(N / 2)
+            let z0: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, t))
+                .take(n / 2)
                 .collect();
-            let z1: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, T))
-                .take(N / 2)
+            let z1: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, t))
+                .take(n / 2)
                 .collect();
-            let m0: R<N> = ckks.encoder.encode(&z0)?;
-            let m1: R<N> = ckks.encoder.encode(&z1)?;
+            let m0: R = ckks.encoder.encode(&z0)?;
+            let m1: R = ckks.encoder.encode(&z1)?;
 
             let ct0 = ckks.encrypt(&mut rng, &pk, &m0)?;
             let ct1 = ckks.encrypt(&mut rng, &pk, &m1)?;
@@ -243,26 +258,30 @@ mod tests {
 
     #[test]
     fn test_sub() -> Result<()> {
-        const Q: u64 = 2u64.pow(16) + 1;
-        const N: usize = 16;
-        const T: u64 = 8;
+        let q: u64 = 2u64.pow(16) + 1;
+        let n: usize = 16;
+        let t: u64 = 2;
+        let param = Param {
+            ring: RingParam { q, n },
+            t,
+        };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let ckks = CKKS::<Q, N>::new(scale_factor);
+            let ckks = CKKS::new(&param, scale_factor);
 
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
-            let z0: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, T))
-                .take(N / 2)
+            let z0: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, t))
+                .take(n / 2)
                 .collect();
-            let z1: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, T))
-                .take(N / 2)
+            let z1: Vec<C<f64>> = std::iter::repeat_with(|| C::<f64>::rand(&mut rng, t))
+                .take(n / 2)
                 .collect();
-            let m0: R<N> = ckks.encoder.encode(&z0)?;
-            let m1: R<N> = ckks.encoder.encode(&z1)?;
+            let m0: R = ckks.encoder.encode(&z0)?;
+            let m1: R = ckks.encoder.encode(&z1)?;
 
             let ct0 = ckks.encrypt(&mut rng, &pk, &m0)?;
             let ct1 = ckks.encrypt(&mut rng, &pk, &m1)?;

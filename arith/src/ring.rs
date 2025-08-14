@@ -3,6 +3,12 @@ use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RingParam {
+    pub q: u64, // TODO think if really needed or it's fine with coeffs[0].q
+    pub n: usize,
+}
+
 /// Represents a ring element. Currently implemented by ring_nq.rs#Rq and
 /// ring_torus.rs#Tn. Is not a 'pure algebraic ring', but more a custom trait
 /// definition which includes methods like `mod_switch`.
@@ -21,27 +27,25 @@ pub trait Ring:
     + PartialEq
     + Debug
     + Clone
-    + Copy
+    // + Copy
     + Sum<<Self as Add>::Output>
     + Sum<<Self as Mul>::Output>
 {
     /// C defines the coefficient type
     type C: Debug + Clone;
 
-    const Q: u64;
-    const N: usize;
-
+    fn param(&self) -> RingParam;
     fn coeffs(&self) -> Vec<Self::C>;
-    fn zero() -> Self;
+    fn zero(param: &RingParam) -> Self;
     // note/wip/warning: dist (0,q) with f64, will output more '0=q' elements than other values
-    fn rand(rng: impl Rng, dist: impl Distribution<f64>) -> Self;
+    fn rand(rng: impl Rng, dist: impl Distribution<f64>, param: &RingParam) -> Self;
 
-    fn from_vec(coeffs: Vec<Self::C>) -> Self;
+    fn from_vec(param: &RingParam, coeffs: Vec<Self::C>) -> Self;
 
     fn decompose(&self, beta: u32, l: u32) -> Vec<Self>;
 
-    fn remodule<const P: u64>(&self) -> impl Ring;
-    fn mod_switch<const P: u64>(&self) -> impl Ring;
+    fn remodule(&self, p:u64) -> impl Ring;
+    fn mod_switch(&self, p:u64) -> impl Ring;
 
     /// returns [ [(num/den) * self].round() ] mod q
     /// ie. performs the multiplication and division over f64, and then it

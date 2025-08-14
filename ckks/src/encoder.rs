@@ -1,14 +1,15 @@
 use anyhow::Result;
 
-use arith::{Matrix, Ring, Rq, C, R};
+use arith::{Matrix, Rq, C, R};
 
 #[derive(Clone, Debug)]
-pub struct SecretKey<const Q: u64, const N: usize>(Rq<Q, N>);
+pub struct SecretKey(Rq);
 
 #[derive(Clone, Debug)]
-pub struct PublicKey<const Q: u64, const N: usize>(Rq<Q, N>, Rq<Q, N>);
+pub struct PublicKey(Rq, Rq);
 
-pub struct Encoder<const Q: u64, const N: usize> {
+pub struct Encoder {
+    n: usize,
     scale_factor: C<f64>, // Δ (delta)
     primitive: C<f64>,
     basis: Matrix<C<f64>>,
@@ -34,13 +35,14 @@ fn vandermonde(n: usize, w: C<f64>) -> Matrix<C<f64>> {
     }
     Matrix::<C<f64>>(v)
 }
-impl<const Q: u64, const N: usize> Encoder<Q, N> {
-    pub fn new(scale_factor: C<f64>) -> Self {
-        let primitive: C<f64> = primitive_root_of_unity(2 * N);
-        let basis = vandermonde(N, primitive);
+impl Encoder {
+    pub fn new(n: usize, scale_factor: C<f64>) -> Self {
+        let primitive: C<f64> = primitive_root_of_unity(2 * n);
+        let basis = vandermonde(n, primitive);
         let basis_t = basis.transpose();
 
         Self {
+            n,
             scale_factor,
             primitive,
             basis,
@@ -52,7 +54,7 @@ impl<const Q: u64, const N: usize> Encoder<Q, N> {
     /// from $\mathbb{C}^{N/2} \longrightarrow \mathbb{Z_q}[X]/(X^N +1) = R$
     // TODO use alg.1 from 2018-1043,
     //      or as in 2018-1073: $f(x) = 1N (U^T.conj() m + U^T m.conj())$
-    pub fn encode(&self, z: &[C<f64>]) -> Result<R<N>> {
+    pub fn encode(&self, z: &[C<f64>]) -> Result<R> {
         // $pi^{-1}: \mathbb{C}^{N/2} \longrightarrow \mathbb{H}$
         let expanded = self.pi_inv(z);
 
@@ -93,10 +95,10 @@ impl<const Q: u64, const N: usize> Encoder<Q, N> {
 
         // TMP: naive round, maybe do gaussian
         let coeffs = r.iter().map(|e| e.re.round() as i64).collect::<Vec<i64>>();
-        Ok(R::from_vec(coeffs))
+        Ok(R::from_vec(self.n, coeffs))
     }
 
-    pub fn decode(&self, p: &R<N>) -> Result<Vec<C<f64>>> {
+    pub fn decode(&self, p: &R) -> Result<Vec<C<f64>>> {
         let p: Vec<C<f64>> = p
             .coeffs()
             .iter()
@@ -110,7 +112,7 @@ impl<const Q: u64, const N: usize> Encoder<Q, N> {
 
     /// pi: \mathbb{H} \longrightarrow \mathbb{C}^{N/2}
     fn pi(&self, z: &[C<f64>]) -> Vec<C<f64>> {
-        z[..N / 2].to_vec()
+        z[..self.n / 2].to_vec()
     }
     /// pi^{-1}: \mathbb{C}^{N/2} \longrightarrow \mathbb{H}
     fn pi_inv(&self, z: &[C<f64>]) -> Vec<C<f64>> {
@@ -154,6 +156,7 @@ mod tests {
     fn test_encode_decode() -> Result<()> {
         const Q: u64 = 1024;
         const N: usize = 32;
+        let n: usize = 32;
 
         let T = 128; // WIP
         let mut rng = rand::thread_rng();
@@ -166,9 +169,9 @@ mod tests {
             .collect();
 
             let delta = C::<f64>::new(64.0, 0.0); // delta = scaling factor
-            let encoder = Encoder::<Q, N>::new(delta);
+            let encoder = Encoder::new(n, delta);
 
-            let m: R<N> = encoder.encode(&z)?; // polynomial (encoded vec) \in R
+            let m: R = encoder.encode(&z)?; // polynomial (encoded vec) \in R
 
             let z_decoded = encoder.decode(&m)?;
 
