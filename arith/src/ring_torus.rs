@@ -252,6 +252,7 @@ impl Mul<Tn> for Tn {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
+        // TODO NTT/FFT
         naive_poly_mul(&self, &rhs)
     }
 }
@@ -259,6 +260,7 @@ impl Mul<&Tn> for &Tn {
     type Output = Tn;
 
     fn mul(self, rhs: &Tn) -> Self::Output {
+        // TODO NTT/FFT
         naive_poly_mul(self, rhs)
     }
 }

@@ -113,6 +113,24 @@ impl Ring for Rq {
     }
 }
 
+impl Rq {
+    fn coeffs_u64(&self) -> Vec<u64> {
+        self.coeffs.iter().map(|c_i| c_i.v).collect()
+    }
+    fn ntt(&self) -> Vec<Zq> {
+        NTT::ntt(self.param.q, self.param.n, &self.coeffs_u64())
+            .iter()
+            .map(|c_i| Zq::from_u64(self.param.q, *c_i))
+            .collect()
+    }
+    fn intt(&self) -> Vec<Zq> {
+        NTT::intt(self.param.q, self.param.n, &self.coeffs_u64())
+            .iter()
+            .map(|c_i| Zq::from_u64(self.param.q, *c_i))
+            .collect()
+    }
+}
+
 impl From<(u64, crate::ring_n::R)> for Rq {
     fn from(qr: (u64, crate::ring_n::R)) -> Self {
         let (q, r) = qr;
@@ -145,7 +163,7 @@ impl Rq {
         self.coeffs.clone()
     }
     pub fn compute_evals(&mut self) {
-        self.evals = Some(NTT::ntt(self).coeffs);
+        self.evals = Some(self.ntt());
         // TODO improve, ntt returns Rq but here just needs Vec<Zq>
     }
     pub fn to_r(self) -> crate::R {
@@ -566,10 +584,10 @@ fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
 
     // reuse evaluations if already computed
     if !lhs.evals.is_some() {
-        lhs.evals = Some(NTT::ntt(lhs).coeffs);
+        lhs.evals = Some(lhs.ntt());
     };
     if !rhs.evals.is_some() {
-        rhs.evals = Some(NTT::ntt(rhs).coeffs);
+        rhs.evals = Some(rhs.ntt());
     };
     let lhs_evals = lhs.evals.clone().unwrap();
     let rhs_evals = rhs.evals.clone().unwrap();
@@ -578,8 +596,8 @@ fn mul_mut(lhs: &mut Rq, rhs: &mut Rq) -> Rq {
         &lhs.param,
         zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
     );
-    let c = NTT::intt(&c_ntt);
-    Rq::new(&lhs.param, c.coeffs, Some(c_ntt.coeffs))
+    let c: Vec<Zq> = c_ntt.intt();
+    Rq::new(&lhs.param, c, Some(c_ntt.coeffs))
 }
 // note: this assumes that Q is prime
 // TODO impl karatsuba for non-prime Q. Alternatively check NTT with RNS trick.
@@ -590,20 +608,20 @@ fn mul(lhs: &Rq, rhs: &Rq) -> Rq {
     let lhs_evals: Vec<Zq> = if lhs.evals.is_some() {
         lhs.evals.clone().unwrap()
     } else {
-        NTT::ntt(lhs).coeffs
+        lhs.ntt()
     };
     let rhs_evals: Vec<Zq> = if rhs.evals.is_some() {
         rhs.evals.clone().unwrap()
     } else {
-        NTT::ntt(rhs).coeffs
+        rhs.ntt()
     };
 
     let c_ntt: Rq = Rq::from_vec(
         &lhs.param,
         zip_eq(lhs_evals, rhs_evals).map(|(l, r)| l * r).collect(),
     );
-    let c = NTT::intt(&c_ntt);
-    Rq::new(&lhs.param, c.coeffs, Some(c_ntt.coeffs))
+    let c = c_ntt.intt();
+    Rq::new(&lhs.param, c, Some(c_ntt.coeffs))
 }
 
 impl fmt::Display for Rq {
