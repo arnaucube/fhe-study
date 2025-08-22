@@ -51,18 +51,21 @@ impl NTT {
                 let S: u64 = roots_of_unity[m + i];
                 for j in k..k + t {
                     let U: u64 = r[j];
-                    let V: u64 = (r[j + t] * S) % q;
+                    // let V: u64 = (r[j + t] * S) % q;
+                    let V: u64 = ((r[j + t] as u128 * S as u128) % q as u128) as u64;
                     // compute r[j] = (U + V) % q:
-                    r[j] = U + V;
-                    if r[j] >= q {
-                        r[j] -= q;
-                    }
-                    // compute r[j + t] = (U - V) % q:
-                    if U >= V {
-                        r[j + t] = U - V;
-                    } else {
-                        r[j + t] = (q + U) - V;
-                    }
+                    r[j] = ((U as u128 + V as u128) % q as u128) as u64;
+                    r[j + t] = (((q as u128 + U as u128) - V as u128) % q as u128) as u64;
+                    // r[j] = U + V;
+                    // if r[j] >= q {
+                    //     r[j] -= q;
+                    // }
+                    // // compute r[j + t] = (U - V) % q:
+                    // if U >= V {
+                    //     r[j + t] = U - V;
+                    // } else {
+                    //     r[j + t] = (q + U) - V;
+                    // }
                 }
                 k = k + 2 * t;
             }
@@ -90,17 +93,20 @@ impl NTT {
                 for j in k..k + t {
                     let U: u64 = r[j];
                     let V: u64 = r[j + t];
+                    r[j] = ((U as u128 + V as u128) % q as u128) as u64;
+                    r[j + t] =
+                        (((q as u128 + U as u128) - V as u128) * S as u128 % q as u128) as u64;
                     // compute r[j] = (U + V) % q:
-                    r[j] = U + V;
-                    if r[j] >= q {
-                        r[j] -= q;
-                    }
-                    // compute r[j + t] = ((U - V) * S) % q;
-                    if U >= V {
-                        r[j + t] = ((U - V) * S) % q;
-                    } else {
-                        r[j + t] = ((q + U - V) * S) % q;
-                    }
+                    // r[j] = U + V;
+                    // if r[j] >= q {
+                    //     r[j] -= q;
+                    // }
+                    // // compute r[j + t] = ((U - V) * S) % q;
+                    // if U >= V {
+                    //     r[j + t] = ((U - V) * S) % q;
+                    // } else {
+                    //     r[j + t] = ((q + U - V) * S) % q;
+                    // }
                 }
                 k += 2 * t;
             }
@@ -108,7 +114,8 @@ impl NTT {
             m /= 2;
         }
         for i in 0..n {
-            r[i] = (r[i] * n_inv) % q;
+            // r[i] = (r[i] * n_inv) % q;
+            r[i] = ((r[i] as u128 * n_inv as u128) % q as u128) as u64;
         }
         r
     }

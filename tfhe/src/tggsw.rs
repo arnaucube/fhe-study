@@ -41,7 +41,7 @@ impl TGGSW {
     }
 }
 
-/// External product tggsw x tglwe
+/// External product TGGSW x TGLWE
 impl Mul<TGLWE> for TGGSW {
     type Output = TGLWE;
 

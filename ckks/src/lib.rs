@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn test_sub() -> Result<()> {
         let q: u64 = 2u64.pow(16) + 1;
-        let n: usize = 16;
+        let n: usize = 8;
         let t: u64 = 2;
         let param = Param {
             ring: RingParam { q, n },

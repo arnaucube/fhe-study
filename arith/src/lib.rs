@@ -17,6 +17,7 @@ pub mod tuple_ring;
 
 // mod naive_ntt; // note: for dev only
 pub mod ntt;
+pub mod ntt_u64;
 
 // expose objects
 pub use complex::C;
