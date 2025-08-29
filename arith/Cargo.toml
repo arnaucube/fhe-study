@@ -17,3 +17,6 @@ num = "0.4.3"
 num-complex = "0.4.6"
 ndarray = "0.16.1"
 ndarray-linalg = { version = "0.17.0", features = ["intel-mkl"] }
+
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
