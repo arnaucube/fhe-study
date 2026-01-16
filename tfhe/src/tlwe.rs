@@ -281,7 +281,7 @@ impl Mul<T64> for TLWE {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use std::time::Instant;
 
     use super::*;
@@ -295,8 +295,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
@@ -330,8 +330,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
@@ -364,8 +364,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
@@ -397,8 +397,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
@@ -432,14 +432,14 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 64;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
         let (sk2, _) = TLWE::new_key(&mut rng, &param)?;
         // ksk to switch from sk to sk2
         let ksk = TLWE::new_ksk(&mut rng, &param, beta, l, &sk, &sk2)?;
 
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let msg_dist = Uniform::new(0_u64, param.t)?;
         let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
         let p = TLWE::encode(&param, &m); // plaintext
 
@@ -473,7 +473,7 @@ mod tests {
             k: 1,
             t: 128, // plaintext modulus
         };
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let start = Instant::now();
         let table: TGLWE = compute_lookup_table(&param);
@@ -486,7 +486,7 @@ mod tests {
         let btk = BootstrappingKey::from_sk(&mut rng, &param, &sk)?;
         println!("btk took: {:?}", start.elapsed());
 
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let msg_dist = Uniform::new(0_u64, param.t)?;
         let m = Rq::rand_u64(&mut rng, msg_dist, &param.lwe().pt())?; // q=t, n=1
         let p = TLWE::encode(&param.lwe(), &m); // plaintext
 

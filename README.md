@@ -26,7 +26,7 @@ let param = Param {
     t: 128, // plaintext modulus
 };
 
-let mut rng = rand::thread_rng();
+let mut rng = rand::rng();
 let msg_dist = Uniform::new(0_u64, param.t);
 
 let (sk, pk) = TLWE::new_key(&mut rng, &param)?;

@@ -1,4 +1,4 @@
-use rand::{distributions::Distribution, Rng};
+use rand::{distr::Distribution, Rng};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
@@ -350,7 +350,7 @@ impl fmt::Debug for Zq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     #[test]
     fn exp() {
@@ -393,8 +393,8 @@ mod tests {
         let beta: u32 = 5;
         let l: u32 = 3;
 
-        let dist = Uniform::new(0_u64, q);
-        let mut rng = rand::thread_rng();
+        let dist = Uniform::new(0_u64, q).unwrap();
+        let mut rng = rand::rng();
 
         for _ in 0..1000 {
             let x = Zq::from_u64(q, dist.sample(&mut rng));

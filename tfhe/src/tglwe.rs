@@ -196,7 +196,7 @@ impl Mul<Tn> for TGLWE {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     use super::*;
 
@@ -209,8 +209,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TGLWE::new_key(&mut rng, &param)?;
@@ -244,8 +244,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TGLWE::new_key(&mut rng, &param)?;
@@ -278,8 +278,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TGLWE::new_key(&mut rng, &param)?;
@@ -311,8 +311,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TGLWE::new_key(&mut rng, &param)?;
@@ -343,8 +343,8 @@ mod tests {
             t: 128, // plaintext modulus
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..20 {
             let (sk, pk) = TGLWE::new_key(&mut rng, &param)?;

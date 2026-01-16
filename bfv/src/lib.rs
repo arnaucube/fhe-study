@@ -121,7 +121,7 @@ impl BFV {
         // WIP: review probabilities
 
         // let Xi_key = Uniform::new(-1_f64, 1_f64);
-        let Xi_key = Uniform::new(0_u64, 2_u64);
+        let Xi_key = Uniform::new(0_u64, 2_u64)?;
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         // secret key
@@ -132,7 +132,7 @@ impl BFV {
         s.compute_evals();
 
         // pk = (-a * s + e, a)
-        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, param.ring.q), &param.ring)?;
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, param.ring.q)?, &param.ring)?;
         let e = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
         let pk: PublicKey = PublicKey(&(&(-a.clone()) * &s) + &e, a.clone()); // TODO rm clones
         Ok((SecretKey(s), pk))
@@ -145,7 +145,7 @@ impl BFV {
         debug_assert_eq!(param.t, m.param.q);
         debug_assert_eq!(param.ring.n, m.param.n);
 
-        let Xi_key = Uniform::new(-1_f64, 1_f64);
+        let Xi_key = Uniform::new(-1_f64, 1_f64)?;
         // let Xi_key = Uniform::new(0_u64, 2_u64);
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
@@ -210,7 +210,7 @@ impl BFV {
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
         // let Xi_err = Normal::new(0_f64, 0.0)?;
         let s = s.0.remodule(pq);
-        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, pq), &rlk_param)?;
+        let a = Rq::rand_u64(&mut rng, Uniform::new(0_u64, pq)?, &rlk_param)?;
         let e = Rq::rand_f64(&mut rng, Xi_err, &rlk_param)?;
 
         // let rlk: RLK<PQ, N> = RLK::<PQ, N>(-(&a * &s + e) + (s * s) * P, a.clone());
@@ -274,7 +274,7 @@ impl BFV {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     use super::*;
 
@@ -289,12 +289,12 @@ mod tests {
             p: 0,  // unused in this test
         };
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-            let msg_dist = Uniform::new(0_u64, param.t);
+            let msg_dist = Uniform::new(0_u64, param.t)?;
             let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
             let c = BFV::encrypt(&mut rng, &param, &pk, &m)?;
@@ -317,12 +317,12 @@ mod tests {
             p: 0,  // unused in this test
         };
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-            let msg_dist = Uniform::new(0_u64, param.t);
+            let msg_dist = Uniform::new(0_u64, param.t)?;
             let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
 
@@ -348,11 +348,11 @@ mod tests {
             p: q * q,
         };
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let (sk, pk) = BFV::new_key(&mut rng, &param)?;
 
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let msg_dist = Uniform::new(0_u64, param.t)?;
         let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
         let m2_const = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
         let c1 = BFV::encrypt(&mut rng, &param, &pk, &m1)?;
@@ -389,7 +389,7 @@ mod tests {
             const PQ: u64 = P * Q;
             const DELTA: u64 = Q / T; // floor
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
 
             let Xi_key = Uniform::new(0_f64, 1_f64);
             let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
@@ -509,9 +509,9 @@ mod tests {
             t: 2, // plaintext modulus
             p: q * q,
         };
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let msg_dist = Uniform::new(0_u64, param.t)?;
         for _ in 0..1_000 {
             let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
             let m2 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
@@ -563,8 +563,8 @@ mod tests {
             p: q * q,
         };
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..1_000 {
             let m1 = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;

@@ -173,8 +173,8 @@ mod tests {
 
         use rand::distributions::Distribution;
         use rand::distributions::Uniform;
-        let mut rng = rand::thread_rng();
-        let dist = Uniform::new(0_f64, Q as f64);
+        let mut rng = rand::rng();
+        let dist = Uniform::new(0_f64, Q as f64)?;
 
         for _ in 0..100 {
             let a: [Zq<Q>; N] = array::from_fn(|_| Zq::from_f64(dist.sample(&mut rng)));

@@ -139,8 +139,8 @@ mod tests {
 
         let v_inv = NTT::<Q, N>::invert_vandermonde(&v);
 
-        let mut rng = rand::thread_rng();
-        let uniform_distr = Uniform::new(0_f64, Q as f64);
+        let mut rng = rand::rng();
+        let uniform_distr = Uniform::new(0_f64, Q as f64)?;
         let a = Rq::<Q, N>::rand_f64(&mut rng, uniform_distr)?;
         // let a = PR::<Q, N>::new_from_u64(vec![36, 21, 9, 19]);
 
@@ -185,7 +185,7 @@ mod tests {
         // let primitive = NTT::<Q, N>::get_primitive_root_of_unity((2*N) as u64)?;
         let ntt = NTT::<Q, N>::new()?;
 
-        let rng = rand::thread_rng();
+        let rng = rand::rng();
         let a = Rq::<Q, { 2 * N }>::rand_f64(rng, Uniform::new(0_f64, (Q - 1) as f64))?;
         let a = a.coeffs;
         dbg!(&a);

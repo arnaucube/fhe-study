@@ -2,7 +2,7 @@
 //!
 
 use itertools::zip_eq;
-use rand::{distributions::Distribution, Rng};
+use rand::{distr::Distribution, Rng};
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};

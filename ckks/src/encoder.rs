@@ -159,11 +159,11 @@ mod tests {
         let n: usize = 32;
 
         let T = 128; // WIP
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..100 {
             let z: Vec<C<f64>> = std::iter::repeat_with(|| {
-                C::<f64>::new(rng.gen_range(0..T) as f64, rng.gen_range(0..T) as f64)
+                C::<f64>::new(rng.random_range(0..T) as f64, rng.random_range(0..T) as f64)
             })
             .take(N / 2)
             .collect();

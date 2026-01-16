@@ -107,7 +107,7 @@ impl Mul<Vec<T64>> for TLev {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     use super::*;
 
@@ -123,8 +123,8 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 16;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;
@@ -155,8 +155,8 @@ mod tests {
         // let l: u32 = 16;
         let l: u32 = 64;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = TLWE::new_key(&mut rng, &param)?;

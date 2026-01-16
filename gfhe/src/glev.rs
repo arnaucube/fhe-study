@@ -82,7 +82,7 @@ impl<R: Ring> Mul<Vec<R>> for GLev<R> {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     use super::*;
     use arith::{RingParam, Rq};
@@ -103,8 +103,8 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 16;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = GLWE::<Rq>::new_key(&mut rng, &param)?;

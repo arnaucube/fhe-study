@@ -46,7 +46,7 @@ impl CKKS {
     pub fn new_key(&self, mut rng: impl Rng) -> Result<(SecretKey, PublicKey)> {
         let param = &self.param;
 
-        let Xi_key = Uniform::new(-1_f64, 1_f64);
+        let Xi_key = Uniform::new(-1_f64, 1_f64)?;
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         let e = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
@@ -70,7 +70,7 @@ impl CKKS {
         m: &R,
     ) -> Result<(Rq, Rq)> {
         let param = self.param;
-        let Xi_key = Uniform::new(-1_f64, 1_f64);
+        let Xi_key = Uniform::new(-1_f64, 1_f64)?;
         let Xi_err = Normal::new(0_f64, ERR_SIGMA)?;
 
         let e_0 = Rq::rand_f64(&mut rng, Xi_err, &param.ring)?;
@@ -134,7 +134,7 @@ mod tests {
         let scale_factor_u64 = 512_u64; // delta
         let scale_factor = C::<f64>::new(scale_factor_u64 as f64, 0.0); // delta
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..1000 {
             let ckks = CKKS::new(&param, scale_factor);
@@ -142,7 +142,7 @@ mod tests {
             let (sk, pk) = ckks.new_key(&mut rng)?;
 
             let m_raw: R =
-                Rq::rand_f64(&mut rng, Uniform::new(0_f64, t as f64), &param.ring)?.to_r();
+                Rq::rand_f64(&mut rng, Uniform::new(0_f64, t as f64)?, &param.ring)?.to_r();
             let m = &m_raw * &scale_factor_u64;
 
             let ct = ckks.encrypt(&mut rng, &pk, &m)?;
@@ -171,7 +171,7 @@ mod tests {
         };
         let scale_factor = C::<f64>::new(512.0, 0.0); // delta
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..1000 {
             let ckks = CKKS::new(&param, scale_factor);
@@ -220,7 +220,7 @@ mod tests {
         };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..1000 {
             let ckks = CKKS::new(&param, scale_factor);
@@ -267,7 +267,7 @@ mod tests {
         };
         let scale_factor = C::<f64>::new(1024.0, 0.0); // delta
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..1000 {
             let ckks = CKKS::new(&param, scale_factor);

@@ -2,7 +2,7 @@
 //! operations, which are performed element-wise.
 
 use itertools::zip_eq;
-use rand::{distributions::Distribution, Rng};
+use rand::{distr::Distribution, Rng};
 use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{Ring, RingParam};

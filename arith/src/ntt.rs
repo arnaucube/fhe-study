@@ -220,9 +220,9 @@ mod tests {
         let n: usize = 512;
         let param = RingParam { q, n };
 
-        use rand::distributions::Uniform;
-        let mut rng = rand::thread_rng();
-        let dist = Uniform::new(0_f64, q as f64);
+        use rand::distr::Uniform;
+        let mut rng = rand::rng();
+        let dist = Uniform::new(0_f64, q as f64)?;
 
         for _ in 0..1000 {
             let a: Rq = Rq::rand(&mut rng, dist, &param);

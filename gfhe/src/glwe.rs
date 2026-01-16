@@ -74,13 +74,13 @@ impl<R: Ring> GLWE<R> {
     }
 
     pub fn new_key(mut rng: impl Rng, param: &Param) -> Result<(SecretKey<R>, PublicKey<R>)> {
-        let Xi_key = Uniform::new(0_f64, 2_f64);
+        let Xi_key = Uniform::new(0_f64, 2_f64)?;
         let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let s: TR<R> = TR::rand(&mut rng, Xi_key, param.k, &param.ring);
         let a: TR<R> = TR::rand(
             &mut rng,
-            Uniform::new(0_f64, param.ring.q as f64),
+            Uniform::new(0_f64, param.ring.q as f64)?,
             param.k,
             &param.ring,
         );
@@ -94,7 +94,7 @@ impl<R: Ring> GLWE<R> {
 
         let a: TR<R> = TR::rand(
             &mut rng,
-            Uniform::new(0_f64, param.ring.q as f64),
+            Uniform::new(0_f64, param.ring.q as f64)?,
             param.k,
             &param.ring,
         );
@@ -143,7 +143,7 @@ impl<R: Ring> GLWE<R> {
         sk: &SecretKey<R>,
         m: &R, // already scaled
     ) -> Result<Self> {
-        let Xi_key = Uniform::new(0_f64, 2_f64);
+        let Xi_key = Uniform::new(0_f64, 2_f64)?;
         let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let a: TR<R> = TR::rand(&mut rng, Xi_key, param.k, &param.ring);
@@ -158,7 +158,7 @@ impl<R: Ring> GLWE<R> {
         pk: &PublicKey<R>,
         m: &R, // already scaled
     ) -> Result<Self> {
-        let Xi_key = Uniform::new(0_f64, 2_f64);
+        let Xi_key = Uniform::new(0_f64, 2_f64)?;
         let Xi_err = Normal::new(0_f64, param.err_sigma)?;
 
         let u: R = R::rand(&mut rng, Xi_key, &param.ring);
@@ -319,7 +319,7 @@ impl<R: Ring> Mul<R> for GLWE<R> {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
 
     use super::*;
 
@@ -336,8 +336,8 @@ mod tests {
         };
         type S = GLWE<Rq>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -389,8 +389,8 @@ mod tests {
         };
         type S = GLWE<Tn>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_f64, param.t as f64);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_f64, param.t as f64)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -428,8 +428,8 @@ mod tests {
         };
         type S = GLWE<Rq>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -466,8 +466,8 @@ mod tests {
         };
         type S = GLWE<Rq>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -503,8 +503,8 @@ mod tests {
         };
         type S = GLWE<Rq>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -541,8 +541,8 @@ mod tests {
         // note: wip, Q and P chosen so that P/Q is an integer
         type S = GLWE<Rq>;
 
-        let mut rng = rand::thread_rng();
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let mut rng = rand::rng();
+        let msg_dist = Uniform::new(0_u64, param.t)?;
 
         for _ in 0..200 {
             let (sk, pk) = S::new_key(&mut rng, &param)?;
@@ -593,14 +593,14 @@ mod tests {
         let beta: u32 = 2;
         let l: u32 = 16;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let (sk, pk) = S::new_key(&mut rng, &param)?;
         let (sk2, _) = S::new_key(&mut rng, &param)?;
         // ksk to switch from sk to sk2
         let ksk = S::new_ksk(&mut rng, &param, beta, l, &sk, &sk2)?;
 
-        let msg_dist = Uniform::new(0_u64, param.t);
+        let msg_dist = Uniform::new(0_u64, param.t)?;
         let m = Rq::rand_u64(&mut rng, msg_dist, &param.pt())?;
         let p = S::encode(&param, &m); // plaintext
                                        //

@@ -1,4 +1,4 @@
-use rand::{distributions::Distribution, Rng};
+use rand::{distr::Distribution, Rng};
 use std::{
     iter::Sum,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -155,7 +155,7 @@ impl Mul<&u64> for &T64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::Standard;
+    use rand::distr::StandardUniform;
 
     fn recompose(d: Vec<T64>) -> T64 {
         T64(d.iter().fold(0u64, |acc, &b| (acc << 1) | b.0))
@@ -181,9 +181,9 @@ mod tests {
             q: u64::MAX, // WIP
             n: 1,
         };
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..1000 {
-            let x = T64::rand(&mut rng, Standard, &param);
+            let x = T64::rand(&mut rng, StandardUniform, &param);
             let d = x.decompose(beta, l);
             assert_eq!(recompose(d), x);
         }
